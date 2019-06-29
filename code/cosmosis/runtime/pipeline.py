@@ -750,11 +750,24 @@ class LikelihoodPipeline(Pipeline):
                                        "extra_output", fallback="")
 
         self.extra_saves = []
+        self.number_extra = 0 
         for extra_save in extra_saves.split():
             section, name = extra_save.upper().split('/')
             self.extra_saves.append((section, name))
+            
+            # ------------------------- otavio begin ----------------------------
+            #
+            # To load an array-type extra_output, we should know beforehand its size
+            # (yes, that's bad). So, it reads from the name especification
+            # e.g. data_vector/2pt_theory#563, in which #563 specifies the size
+            #
 
-        self.number_extra = len(self.extra_saves)
+            self.number_extra += int(name.split('#')[-1]) if '#' in name else 1
+            # ------------------------- otavio end -----------------------------
+
+        # self.number_extra = len(self.extra_saves)
+
+
         #pull out all the section names and likelihood names for later
 
         likelihood_names = self.options.get(PIPELINE_INI_SECTION,
@@ -827,7 +840,24 @@ class LikelihoodPipeline(Pipeline):
     def output_names(self):
         u"""Return a list of strings, each the name of a non-fixed parameter."""
         param_names = [str(p) for p in self.varied_params]
-        extra_names = ['%s--%s'%p for p in self.extra_saves]
+        # extra_names = ['%s--%s'%p for p in self.extra_saves]
+
+        # ------------------- otavio begin -----------------------
+        # 
+        # This transforms the name data_vector/2pt_theory#563 into
+        # data_vector/2pt_theory_1, data_vector/2pt_theory_2, ...
+        #
+
+        extra_names = []
+        for section,name in self.extra_saves:
+            if ('#' in name):
+                n,l = name.split('#')
+                for i in range(1,int(l)+1):
+                    extra_names.append('%s--%s_%d'%(section,n,i))
+            else:
+                extra_names.append('%s--%s'%(section,name))
+        # -------------------- otavio end ------------------------
+
         return param_names + extra_names
 
 
@@ -1282,30 +1312,29 @@ class LikelihoodPipeline(Pipeline):
         for option in self.extra_saves:
             try:
                 #JAZ - should this be just .get(*option) ?
-                #value = data.get_double(*option)
 
-                # ----- otavio begin -----
+                # --------------------------- otavio begin ----------------------------
                 # 
-                # Allows extra_output to be anything and,
-                # in the case of a numpy.ndarray, outputs
-                # in a tsv format.
-                #
-                # Note that the chain file header still
-                # renders only 1 column name, while here
-                # we output N columns (currently fixing
-                # this with a separate bash script)
+                # If the # symbol is present, we have an array-type extra_output and it is
+                # read as numpy.ndarray. We append all of its elements to the extra_saves.
+                # If the total array size do not match the sum of the sizes indicated in the
+                # name #, an exception will be raised.
                 #
 
-                value = data.get(*option)
-
-                if(type(value) == np.ndarray):
-                    value = '\t'.join([str(v) for v in value])
-                # ----- otavio end -----
+                if('#' in option[1]):
+                    value = data.get(option[0], option[1].split('#')[0])
+                else:
+                    value = data.get_double(*option)
 
             except block.BlockError:
                 value = np.nan
 
-            extra_saves.append(value)
+            if (type(value)==np.ndarray):
+                for e in value:
+                    extra_saves.append(e)
+            else:
+                extra_saves.append(value)
+                # ---------------------------- otavio end ---------------------------
 
         self.n_iterations += 1
         if return_data:

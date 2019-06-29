@@ -255,22 +255,14 @@ class TwoPointLikelihood(GaussianLikelihood):
     def extract_theory_points(self, block):
         theory = []
 
-        # ---------- otavio begin ----------
-        # 
-        # This tries to load the theory datavector from the datablock.
-        # The entries should have the form data_vector--2pt_theory_i.
-        # 
-        # This is to allow importance sampling to use precomputed 
-        # theory datavectors.
-
+        # ---------- Otavio Alves begin ----------
         i = 1
         while(block.has_value(names.data_vector, self.like_name + "_theory_" + str(i))):
             theory.append(block[names.data_vector, self.like_name + "_theory_" + str(i)])
             i += 1
         if(len(theory) > 0):
             return theory
-
-        # ---------- otavio end ----------
+        # ---------- Otavio Alves end ----------
 
         # We may want to save these splines for the covariance matrix later
         self.theory_splines = {}
