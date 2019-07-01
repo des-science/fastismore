@@ -27,17 +27,18 @@ Try 'grep -R otavio' to see the modifications
 
 1. Modified pipeline.py to allow extra_output to handle numpy.ndarrays.
 
-But we should know beforehand the size of the datavector (e.g. 457), so, the notation is:
+   But (for now) we should know beforehand the size of the datavector
+   (e.g. 457), so, the notation is:
 
-extra_output = data_vector/2pt_theory#457 ...
+   extra_output = data_vector/2pt_theory#457 ...
 
-	This in Brazil would be called "gambiarra". Possible translations
-	according to a dictionary are: McGyverism, workaround, alternative
-	engineering.
+       This in Brazil would be called "gambiarra". Possible translations
+       according to a dictionary are: McGyverism, workaround, alternative
+       engineering.
 
 2. In 2pt_like.py's function extract_theory_points(): if it finds
-data_vector--2pt_theory_i values in the datablock, uses it. 
+   data_vector--2pt_theory_i values in the datablock, uses it. 
 
-3. So, should have a values_importance.ini file including all
-data_vector--2pt_theory_i as varied parameters, for the importance
-sampler to include them in the datablock (a bash script generates this file).
+3. So, we should have a values_importance.ini file including all
+   data_vector--2pt_theory_i as varied parameters, for the importance
+   sampler load them (a bash script generates this file).

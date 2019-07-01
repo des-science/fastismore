@@ -255,14 +255,14 @@ class TwoPointLikelihood(GaussianLikelihood):
     def extract_theory_points(self, block):
         theory = []
 
-        # ---------- Otavio Alves begin ----------
+        # ---------- otavio begin ----------
         i = 1
         while(block.has_value(names.data_vector, self.like_name + "_theory_" + str(i))):
             theory.append(block[names.data_vector, self.like_name + "_theory_" + str(i)])
             i += 1
         if(len(theory) > 0):
             return theory
-        # ---------- Otavio Alves end ----------
+        # ---------- otavio end ----------
 
         # We may want to save these splines for the covariance matrix later
         self.theory_splines = {}
