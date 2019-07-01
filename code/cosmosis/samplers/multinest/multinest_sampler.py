@@ -95,7 +95,16 @@ class MultinestSampler(ParallelSampler):
 
         # We add one to the output to save the posterior as well as the
         # likelihood.
-        self.npar = self.ndim + len(self.pipeline.extra_saves) + 2
+        # self.npar = self.ndim + len(self.pipeline.extra_saves) + 2
+
+        # ------------ otavio begin ----------------
+        # 
+        # Now we account for arrays in extra_param, adding
+        # array length to the number of parameters
+        # 
+
+        self.npar = self.ndim + sum([int(name.split('#')[-1]) if '#' in name else 1 for section, name in self.pipeline.extra_saves]) + 2
+        # ------------ otavio end -------------
 
         #Required options
         self.max_iterations = self.read_ini("max_iterations", int)
@@ -245,7 +254,7 @@ class MultinestSampler(ParallelSampler):
                 removed += 1
 
         self.output.final("nsample", n-removed)
-        # ------------ otavio end -----------
+            # ------------ otavio end -----------
         self.output.flush()
 
     def is_converged(self):
