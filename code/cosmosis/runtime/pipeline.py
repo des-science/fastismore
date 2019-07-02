@@ -1070,7 +1070,7 @@ class LikelihoodPipeline(Pipeline):
             # file then get them from the block
             if self.likelihood_names == NO_LIKELIHOOD_NAMES:
                 self._set_likelihood_names_from_block(data)
-                
+
             return data
         else:
             sys.stderr.write("Pipeline failed on these parameters: {}\n".format(p))
@@ -1149,6 +1149,9 @@ class LikelihoodPipeline(Pipeline):
         r = PipelineResults(self.number_extra)
 
         priors = self.prior(p, all_params=all_params, total_only=False)
+        # ----------- otavio begin -------------
+        priors = filter(lambda p:'data_vector--2pt_theory' not in p[0], priors)
+        # ------------ otavio end -------------
         r.prior = sum(pr[1] for pr in priors)
 
         if np.isnan(r.prior):
