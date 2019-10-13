@@ -1,15 +1,24 @@
 #!/usr/bin/env python
+# author: Otavio Alves
+#
+# description: This code computes -1/2*chi2 for a data vector given a chain with data_vector--2pt_theory_### columns
+#
+# input: data_vector.fits: cosmosis-like data vector
+#        chain.txt: chain with data_vector--2pt_theory_### columns to compute chi2
+#
+# output: output.txt: -1/2*chi2 (log-likelihood) for each point in chain.txt
+#
 
 import numpy as np
 import pandas as pd
 from astropy.io import fits
-import twopoint
+import twopoint # from cosmosis/cosmosis-standard-library/2pt/
 import sys
 import configparser
 
 data_sets = ['xip', 'xim', 'gammat', 'wtheta']
 
-assert len(sys.argv) == 4, "Should have 3 parameters. Usage: calc_likelihoods data_vector.fits chain.txt output.txt"
+assert len(sys.argv) == 4, "Should have 3 parameters: data_vector.fits chain.txt output.txt"
 
 with open(sys.argv[2]) as f:
     labels = np.array(f.readline()[1:-1].lower().split())

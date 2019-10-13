@@ -120,20 +120,18 @@ c = ChainConsumer()
 
 data = load_chain(sys.argv[1], burn=burn)
 data = add_S8(data)
-data = add_omxh2(data)
+#data = add_omxh2(data)
 
 c.add_chain(on_params(data, params2plot), weights=data['weight'] if 'weight' in data.keys() else None,
             parameters=['$'+l+'$' for l in get_label(params2plot)], name='Base')
 
 for filename in sys.argv[2:-1]:
-    weights = np.e**(np.loadtxt(filename)[burn:]-data['post'])
+    weights = np.e**(np.loadtxt(filename)[burn:]+data['prior']-data['post'])
     if 'weight' in data.keys():
         weights *= data['weight']
 
     c.add_chain(on_params(data, params2plot), weights=weights,
                 parameters=['$'+l+'$' for l in get_label(params2plot)], name='IS')
-
-
 
 c.configure(linestyles="-", linewidths=1.0,
             shade=False, shade_alpha=0.5, sigmas=[1,2], kde=False,
@@ -144,8 +142,7 @@ fig = c.plotter.plot()
 fig.set_size_inches(4.5 + fig.get_size_inches())
 fig.savefig(sys.argv[-1])
 
-
-# ## Plot weights
+# Plot weights
 
 #if(len(sys.argv) > 3):
 #    f = plot.figure(figsize=(10,2))
