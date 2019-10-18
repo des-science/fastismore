@@ -759,7 +759,7 @@ class LikelihoodPipeline(Pipeline):
             #
             # To load an array-type extra_output, we should know beforehand its size
             # (yes, that's bad). So, it reads from the name especification
-            # e.g. data_vector/2pt_theory#563, in which #563 specifies the size
+            # e.g. data_vector/2pt_theory#457, in which #457 specifies the size
             #
 
             self.number_extra += int(name.split('#')[-1]) if '#' in name else 1
@@ -844,7 +844,7 @@ class LikelihoodPipeline(Pipeline):
 
         # ------------------- otavio begin -----------------------
         # 
-        # This transforms the name data_vector/2pt_theory#563 into
+        # This transforms the name data_vector/2pt_theory#457 into
         # data_vector/2pt_theory_1, data_vector/2pt_theory_2, ...
         #
 
@@ -1149,9 +1149,6 @@ class LikelihoodPipeline(Pipeline):
         r = PipelineResults(self.number_extra)
 
         priors = self.prior(p, all_params=all_params, total_only=False)
-        # ----------- otavio begin -------------
-        priors = filter(lambda p:'data_vector--2pt_theory' not in p[0], priors)
-        # ------------ otavio end -------------
         r.prior = sum(pr[1] for pr in priors)
 
         if np.isnan(r.prior):

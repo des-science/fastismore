@@ -9,16 +9,18 @@
 # output: output.txt: -1/2*chi2 (log-likelihood) for each point in chain.txt
 #
 
+import sys
+assert len(sys.argv) == 4, "Should have 3 arguments: data_vector.fits chain.txt output.txt"
+
 import numpy as np
 import pandas as pd
 from astropy.io import fits
 import twopoint # from cosmosis/cosmosis-standard-library/2pt/
-import sys
 import configparser
 
 data_sets = ['xip', 'xim', 'gammat', 'wtheta']
 
-assert len(sys.argv) == 4, "Should have 3 parameters: data_vector.fits chain.txt output.txt"
+# ---------- Do scale cuts -------------
 
 with open(sys.argv[2]) as f:
     labels = np.array(f.readline()[1:-1].lower().split())
@@ -60,6 +62,9 @@ for s in spectra:
     e.append(np.concatenate([s.get_pair(*p)[1] for p in s.get_bin_pairs()]))
 
 data = np.concatenate(e)
+
+# -------------- Scale cuts done --------------
+
 prec = np.linalg.inv(data_vector.covmat)
 
 print('Evaluating likelihoods...')

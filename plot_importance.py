@@ -54,6 +54,8 @@ import matplotlib
 matplotlib.rc('xtick', labelsize=16)
 matplotlib.rc('ytick', labelsize=16)
 
+# -------------------- BASIC DEFINITIONS ---------------------
+
 label_dict = {'cosmological_parameters--w0_fld':  r'w_{GDM}',
               'cosmological_parameters--cs2_fld': r'c_s^2',
               'cosmological_parameters--log_cs2': r'log(c_s^2)',
@@ -109,6 +111,7 @@ def add_S8(data):
     data['cosmological_parameters--s8'] = data['cosmological_parameters--sigma_8']*(data['cosmological_parameters--omega_m']/0.3)**0.5
     return data
 
+# Computes ommh2, ombh2, omch2, omega_c
 def add_omxh2(data):
     data['cosmological_parameters--ommh2'] = data['cosmological_parameters--omega_m']*data['cosmological_parameters--h0']**2
     data['cosmological_parameters--ombh2'] = data['cosmological_parameters--omega_b']*data['cosmological_parameters--h0']**2
@@ -116,16 +119,21 @@ def add_omxh2(data):
     data['cosmological_parameters--omega_c'] = data['cosmological_parameters--omega_m'] - data['cosmological_parameters--omega_b']
     return data
 
+# ---------------------------- PLOT ----------------------------
+
 c = ChainConsumer()
 
 data = load_chain(sys.argv[1], burn=burn)
 data = add_S8(data)
 #data = add_omxh2(data)
 
+# Adds baseline chain
 c.add_chain(on_params(data, params2plot), weights=data['weight'] if 'weight' in data.keys() else None,
             parameters=['$'+l+'$' for l in get_label(params2plot)], name='Base')
 
+# Adds importance sampled chains with IS weight
 for filename in sys.argv[2:-1]:
+    # IS weights
     weights = np.e**(np.loadtxt(filename)[burn:]+data['prior']-data['post'])
     if 'weight' in data.keys():
         weights *= data['weight']
@@ -133,6 +141,7 @@ for filename in sys.argv[2:-1]:
     c.add_chain(on_params(data, params2plot), weights=weights,
                 parameters=['$'+l+'$' for l in get_label(params2plot)], name='IS')
 
+# Some plot configurations
 c.configure(linestyles="-", linewidths=1.0,
             shade=False, shade_alpha=0.5, sigmas=[1,2], kde=False,
 #            colors=['blue', 'red'],
