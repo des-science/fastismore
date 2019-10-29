@@ -16,7 +16,7 @@ NR == 1 {
 			printf "%s\t", $i;
 		}
 	}
-	printf "\n";
+	printf "\b\n";
 }
 
 # If line is a comment, print it as it is
@@ -27,5 +27,5 @@ NR == 1 {
 	for(i in indices){
 		printf "%s\t", $i;
 	}
-	printf "\n";
+	printf "\b\n";
 }
