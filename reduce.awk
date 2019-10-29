@@ -10,13 +10,13 @@ NR == 1 {
 	split("", indices);
 	
 	# Look for columns that are not data_vector and append to the indices array
-	for(i = 1; i <= NF; i++) {
+	for(i = 1; i < NF; i++) {
 		if($i !~ /^data_vector/){
 			indices[length(indices) + 1] = i;
 			printf "%s\t", $i;
 		}
 	}
-	printf "\b\n";
+	printf "\n";
 }
 
 # If line is a comment, print it as it is
@@ -27,5 +27,5 @@ NR == 1 {
 	for(i in indices){
 		printf "%s\t", $i;
 	}
-	printf "\b\n";
+	printf "\n";
 }
