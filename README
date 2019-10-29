@@ -1,7 +1,6 @@
 ---------------- IMPORTANCE SAMPLING -----------------
 
 Testing importance sampling for extensions projects
-Very minimal implementation: quickly done, minimal changes to cosmosis code.
 
 -------------------- HOW TO USE -----------------------
 
@@ -17,12 +16,10 @@ Very minimal implementation: quickly done, minimal changes to cosmosis code.
        weight, define min_weight in the [multinest] section of your
        params.ini file.
 
-3. Run calc_likelihoods.py to compute log-likes for the new data vector
+3. Run importance_sampling.py to compute IS weights for the new data vector
+   (importance weights are exp(new_log_post - old_log_post))
 
 4. Plot results using plot_importance.py or your favorite script
-   Importance weights are exp(new_log_post - old_log_post)
-
-       Multinest: don't forget to multiply by Multinest's weights
 
 ------------------ MODIFICATIONS ---------------------
 

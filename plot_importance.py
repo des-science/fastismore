@@ -54,6 +54,10 @@ import matplotlib
 matplotlib.rc('xtick', labelsize=16)
 matplotlib.rc('ytick', labelsize=16)
 
+chain_filename = sys.argv[1]
+is_filelist = sys.argv[2:-1]
+output_filename = sys.argv[-1]
+
 # -------------------- BASIC DEFINITIONS ---------------------
 
 label_dict = {'cosmological_parameters--w0_fld':  r'w_{GDM}',
@@ -123,20 +127,25 @@ def add_omxh2(data):
 
 c = ChainConsumer()
 
-data = load_chain(sys.argv[1], burn=burn)
+data = load_chain(chain_filename, burn=burn)
 data = add_S8(data)
 #data = add_omxh2(data)
+
+with open(is_filelist[0]) as f:
+    weights_i = f.readline()[1:].strip().index('weight')
 
 # Adds baseline chain
 c.add_chain(on_params(data, params2plot), weights=data['weight'] if 'weight' in data.keys() else None,
             parameters=['$'+l+'$' for l in get_label(params2plot)], name='Base')
 
 # Adds importance sampled chains with IS weight
-for filename in sys.argv[2:-1]:
+for filename in is_filelist:
     # IS weights
-    weights = np.e**(np.loadtxt(filename)[burn:]+data['prior']-data['post'])
-    if 'weight' in data.keys():
-        weights *= data['weight']
+    #weights = np.e**(np.loadtxt(filename)[burn:]+data['prior']-data['post'])
+    #if 'weight' in data.keys():
+    #    weights *= data['weight']
+
+    weights = np.loadtxt(filename)[burn:, weights_i]
 
     c.add_chain(on_params(data, params2plot), weights=weights,
                 parameters=['$'+l+'$' for l in get_label(params2plot)], name='IS')
@@ -149,7 +158,7 @@ c.configure(linestyles="-", linewidths=1.0,
 
 fig = c.plotter.plot()
 fig.set_size_inches(4.5 + fig.get_size_inches())
-fig.savefig(sys.argv[-1])
+fig.savefig(output_filename)
 
 # Plot weights
 
