@@ -1,4 +1,4 @@
-#!/usr/bin/awk -f
+#!/usr/bin/gawk -f
 #
 # author: Otavio Alves
 # This script removes data_vector columns from a chain file. This is done mainly to reduce the filesize.
@@ -10,8 +10,8 @@ NR == 1 {
 	split("", indices);
 	
 	# Look for columns that are not data_vector and append to the indices array
-	for(i = 1; i < NF; i++) {
-		if($i !~ /^data_vector/){
+	for(i = 1; i <= NF; i++) {
+		if(tolower($i) !~ /^data_vector/) {
 			indices[length(indices) + 1] = i;
 			printf "%s\t", $i;
 		}
@@ -25,7 +25,7 @@ NR == 1 {
 /^[^#]/ {
 	# Print only columns in the indices array
 	for(i in indices){
-		printf "%s\t", $i;
+		printf "%s\t", $indices[i];
 	}
 	printf "\n";
 }

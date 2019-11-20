@@ -18,6 +18,7 @@ from astropy.io import fits
 import twopoint # from cosmosis/cosmosis-standard-library/2pt/
 import configparser
 
+#data_sets = ['shear_xi_plus', 'shear_xi_minus', 'galaxy_shear_xi', 'galaxy_xi']
 data_sets = ['xip', 'xim', 'gammat', 'wtheta']
 
 chain_filename = sys.argv[1]
@@ -75,12 +76,16 @@ prec = np.linalg.inv(data_vector.covmat)
 #weight_i = labels.index('weight') if 'weight' in labels else -1
 #theory_i = np.array(['data_vector--2pt_theory_' in l for l in labels])
 
-like_i = np.where(labels == 'like')
-weight_i = np.where(labels == 'weight') if 'weight' in labels else -1
+like_i   = np.where(labels == 'like')[0]   if 'like'   in labels else -1
+prior_i  = np.where(labels == 'prior')[0]  if 'prior'  in labels else -1
+post_i   = np.where(labels == 'post')[0]   if 'post'   in labels else -1
+weight_i = np.where(labels == 'weight')[0] if 'weight' in labels else -1
 theory_i = np.array(['data_vector--2pt_theory_' in l for l in labels])
 
-total_is = 0
-norm_fact = 0
+assert like_i != -1 or (prior_i != -1 and post_i != -1)
+
+total_is = 0.
+norm_fact = 0.
 
 print('Evaluating likelihoods...')
 
@@ -102,7 +107,7 @@ with open(chain_filename) as f:
 
             d = data - vec[theory_i]
             new_like = -np.einsum('i,ij,j', d, prec, d)/2
-            log_is_weight = new_like - vec[like_i]
+            log_is_weight = new_like - (vec[like_i] if like_i != -1 else vec[post_i]-vec[prior_i])
 
             weight = np.e**log_is_weight
 
@@ -114,8 +119,8 @@ with open(chain_filename) as f:
                 total_is -= log_is_weight * w
             else:
                 norm_fact += 1
-                total_is += log_is_weight
+                total_is -= log_is_weight
 
             output.write('%e\t%e\r\n' % (new_like, weight))
 
-        output.write('# <log_weight> = %f\r\n' % (float(total_is)/float(norm_fact)))
+        output.write('# <log_weight> = %f\r\n' % (total_is/norm_fact))

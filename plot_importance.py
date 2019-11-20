@@ -98,9 +98,6 @@ label_dict = {'cosmological_parameters--w0_fld':  r'w_{GDM}',
               }
 
 def load_chain(filename, burn=0):
-    fiducial = {}
-    prior_range = {}
-
     with open(filename) as f:
         labels = np.array(f.readline()[1:-1].lower().split())
 
@@ -131,21 +128,18 @@ data = load_chain(chain_filename, burn=burn)
 data = add_S8(data)
 #data = add_omxh2(data)
 
-with open(is_filelist[0]) as f:
-    weights_i = f.readline()[1:].strip().index('weight')
-
-# Adds baseline chain
+# Add baseline chain
 c.add_chain(on_params(data, params2plot), weights=data['weight'] if 'weight' in data.keys() else None,
             parameters=['$'+l+'$' for l in get_label(params2plot)], name='Base')
 
-# Adds importance sampled chains with IS weight
+# Add importance sampled chains with IS weight
 for filename in is_filelist:
     # IS weights
     #weights = np.e**(np.loadtxt(filename)[burn:]+data['prior']-data['post'])
     #if 'weight' in data.keys():
     #    weights *= data['weight']
 
-    weights = np.loadtxt(filename)[burn:, weights_i]
+    weights = load_chain(filename)['weight'][burn:]
 
     c.add_chain(on_params(data, params2plot), weights=weights,
                 parameters=['$'+l+'$' for l in get_label(params2plot)], name='IS')
