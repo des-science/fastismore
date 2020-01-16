@@ -758,7 +758,7 @@ class LikelihoodPipeline(Pipeline):
             # ------------------------- otavio begin ----------------------------
             #
             # To load an array-type extra_output, we should know beforehand its size
-            # (yes, that's bad). So, it reads from the name especification
+            # So, it reads from the name especification
             # e.g. data_vector/2pt_theory#457, in which #457 specifies the size
             #
 
@@ -1317,7 +1317,7 @@ class LikelihoodPipeline(Pipeline):
                 # 
                 # If the # symbol is present, we have an array-type extra_output and it is
                 # read as numpy.ndarray. We append all of its elements to the extra_saves.
-                # If the total array size do not match the sum of the sizes indicated in the
+                # If the total array size does not match the sum of the sizes indicated in the
                 # name #, an exception will be raised.
                 #
 
