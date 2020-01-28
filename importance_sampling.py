@@ -9,25 +9,34 @@
 # output: output.txt: -1/2*chi2 (log-likelihood) and weight for each point in chain.txt
 #
 
-import sys
-assert len(sys.argv) == 4, "Should have 3 arguments: chain.txt data_vector.fits output.txt"
-
 import numpy as np
 import pandas as pd
 from astropy.io import fits
 import twopoint # from cosmosis/cosmosis-standard-library/2pt/
 import configparser
+import argparse
 
-#data_sets = ['shear_xi_plus', 'shear_xi_minus', 'galaxy_shear_xi', 'galaxy_xi']
-data_sets = ['xip', 'xim', 'gammat', 'wtheta']
+parser = argparse.ArgumentParser(description = 'This code computes importance weights for a data vector given a chain with data_vector--2pt_theory_### columns')
 
-chain_filename = sys.argv[1]
-data_vector_filename = sys.argv[2]
-output_filename = sys.argv[3]
+parser.add_argument('chain', help = 'Base chain filename.')
+parser.add_argument('data_vector', help = 'Data vector filename.')
+parser.add_argument('output', help = 'Output importance sampling weights.')
+
+parser.add_argument('--like_section', dest = 'like_section',
+                       default = '2pt_like', required = False,
+                       help = 'The 2pt_like section name used in cosmosis. Needed in order to get scale cuts.')
+
+parser.add_argument('--datasets', dest = 'data_sets',
+                       default = 'xip,xim,gammat,wtheta', required = False,
+                       help = 'Data set names used in the data vector file.')
+
+args = parser.parse_args()
+
+data_sets = args.data_sets.split(',')
 
 # ---------- Do scale cuts -------------
 
-with open(chain_filename) as f:
+with open(args.chain) as f:
     labels = np.array(f.readline()[1:-1].lower().split())
 
     print('Looking for PARAMS_INI to get scale cuts...')
@@ -51,12 +60,12 @@ values = configparser.ConfigParser(strict=False)
 values.read_string(inifile)
 scale_cuts = {}
 
-data_vector = twopoint.TwoPointFile.from_fits(data_vector_filename, 'covmat')
+data_vector = twopoint.TwoPointFile.from_fits(args.data_vector, 'covmat')
 for name in data_sets: 
     s = data_vector.get_spectrum(name)
     for b1, b2 in s.bin_pairs:
         option_name = "angle_range_{}_{}_{}".format(name, b1, b2)
-        r = [float(e) for e in values.get('2pt_like', option_name).split()]
+        r = [float(e) for e in values.get(args.like_section, option_name).split()]
         scale_cuts[(name, b1, b2)] = r
 
 data_vector.mask_scales(scale_cuts)
@@ -89,14 +98,14 @@ norm_fact = 0.
 
 print('Evaluating likelihoods...')
 
-with open(chain_filename) as f:
+with open(args.chain) as f:
 
-    with open(output_filename, 'w+') as output:
+    with open(args.output, 'w+') as output:
         output.write('#new_like\tweight\r\n')
         output.write('#\r\n')
         output.write('# Importance sampling weights\r\n')
-        output.write('# Chain: {}\r\n'.format(chain_filename))
-        output.write('# Data vector: {}\r\n'.format(data_vector_filename))
+        output.write('# Chain: {}\r\n'.format(args.chain))
+        output.write('# Data vector: {}\r\n'.format(args.data_vector))
         output.write('# Data vector size: {}\r\n'.format(np.sum(theory_i)))
         output.write('# Previous weights {}.\r\n'.format('were found and incorporated' if weight_i != -1 else 'not found'))
         
