@@ -1,13 +1,30 @@
 #!/usr/bin/env python
+# 
 # author: Otavio Alves
 #
-# description: This code computes importance weights for a data vector given a chain with data_vector--2pt_theory_### columns
+# description: This code computes importance weights for a data vector given a
+# chain with data_vector--2pt_theory_### columns
+# 
+# usage: importance_sampling.py [-h] [--like_section LIKE_SECTION]
+#                               [--include_norm] [--datasets DATA_SETS]
+#                               chain data_vector output
+# 
+# positional arguments:
+#   chain                 Base chain filename.
+#   data_vector           Data vector filename.
+#   output                Output importance sampling weights.
 #
-# input: data_vector.fits: cosmosis-like data vector
-#        chain.txt: chain with data_vector--2pt_theory_### columns to compute chi2
-#
-# output: output.txt: -1/2*chi2 (log-likelihood) and weight for each point in chain.txt
-#
+# optional arguments:
+#   -h, --help            show this help message and exit
+#   --like_section LIKE_SECTION
+#                         The 2pt_like section name used in cosmosis. Needed in
+#                         order to get scale cuts (default: 2pt_like).
+#   --include_norm        Include normalization |C| in the likelihood
+#                         (recommended if you are varying the covariance
+#                         matrix).
+#   --datasets DATA_SETS  Data set names used in the data vector file (default:
+#                         xip,xim,gammat,wtheta).
+
 
 import numpy as np
 import pandas as pd
@@ -24,15 +41,19 @@ parser.add_argument('output', help = 'Output importance sampling weights.')
 
 parser.add_argument('--like_section', dest = 'like_section',
                        default = '2pt_like', required = False,
-                       help = 'The 2pt_like section name used in cosmosis. Needed in order to get scale cuts.')
+                       help = 'The 2pt_like section name used in cosmosis. Needed in order to get scale cuts (default: 2pt_like).')
+
+parser.add_argument('--include_norm', dest = 'include_norm', action='store_true',
+                       help = 'Include normalization |C| in the likelihood (recommended if you are varying the covariance matrix).')
 
 parser.add_argument('--datasets', dest = 'data_sets',
                        default = 'xip,xim,gammat,wtheta', required = False,
-                       help = 'Data set names used in the data vector file.')
+                       help = 'Data set names used in the data vector file (default: xip,xim,gammat,wtheta).')
 
 args = parser.parse_args()
 
 data_sets = args.data_sets.split(',')
+print(args.include_norm)
 
 # ---------- Do scale cuts -------------
 
@@ -81,9 +102,8 @@ data = np.concatenate(e)
 
 prec = np.linalg.inv(data_vector.covmat)
 
-#like_i = labels.index('like')
-#weight_i = labels.index('weight') if 'weight' in labels else -1
-#theory_i = np.array(['data_vector--2pt_theory_' in l for l in labels])
+if args.include_norm:
+    sign, log_det = np.linalg.slogdet(data_vector.covmat)
 
 like_i   = np.where(labels == 'like')[0]   if 'like'   in labels else -1
 prior_i  = np.where(labels == 'prior')[0]  if 'prior'  in labels else -1
@@ -91,7 +111,9 @@ post_i   = np.where(labels == 'post')[0]   if 'post'   in labels else -1
 weight_i = np.where(labels == 'weight')[0] if 'weight' in labels else -1
 theory_i = np.array(['data_vector--2pt_theory_' in l for l in labels])
 
-assert like_i != -1 or (prior_i != -1 and post_i != -1)
+chi2_i   = np.where(labels == 'data_vector--2pt_chi2')[0] if 'data_vector--2pt_chi2' in labels else -1
+
+assert chi2_i != -1 or like_i != -1 or (prior_i != -1 and post_i != -1)
 
 total_is = 0.
 norm_fact = 0.
@@ -107,8 +129,26 @@ with open(args.chain) as f:
         output.write('# Chain: {}\r\n'.format(args.chain))
         output.write('# Data vector: {}\r\n'.format(args.data_vector))
         output.write('# Data vector size: {}\r\n'.format(np.sum(theory_i)))
-        output.write('# Previous weights {}.\r\n'.format('were found and incorporated' if weight_i != -1 else 'not found'))
+        output.write('# Using {} column found in chain file.\r\n'.format('chi2' if chi2_i != -1 else ('like' if like_i != -1 else 'post')))
+        if args.include_norm:
+            output.write('# Including |C| factor in likelihood\r\n')
+        if weight_i != -1:
+            output.write('# Previous weights were found and incorporated\r\n')
         
+        # Different ways to recover old_like depending on columns found
+        if chi2_i != -1:
+            if args.include_norm:
+                old_like = lambda vec: -0.5*vec[chi2_i] - 0.5*log_det
+            else:
+                old_like = lambda vec: -0.5*vec[chi2_i]
+
+        elif like_i != -1:
+            old_like = lambda vec: vec[like_i]
+
+        else:
+            old_like = lambda vec: vec[post_i] - vec[prior_i]
+        
+        # Iterate through lines to compute IS weights
         for line in f:
             if line[0] == '#':
                 continue
@@ -116,7 +156,11 @@ with open(args.chain) as f:
 
             d = data - vec[theory_i]
             new_like = -np.einsum('i,ij,j', d, prec, d)/2
-            log_is_weight = new_like - (vec[like_i] if like_i != -1 else vec[post_i]-vec[prior_i])
+
+            if args.include_norm:
+                new_like += -0.5*log_det
+
+            log_is_weight = new_like - old_like(vec) 
 
             weight = np.e**log_is_weight
 
