@@ -29,9 +29,14 @@ parser.add_argument('--like_section', dest = 'like_section',
 parser.add_argument('--datasets', dest = 'data_sets',
                        default = 'xip,xim,gammat,wtheta', required = False,
                        help = 'Data set names used in the data vector file.')
+# SJ begin
+parser.add_argument('--like2pt', dest = 'name_2ptlike',
+                       default = 'like', required = False,
+                       help ='LIKELIHOODS--2PT_LIKE if chain was run with external data sets')
+# SJ end
+
 
 args = parser.parse_args()
-
 data_sets = args.data_sets.split(',')
 
 # ---------- Do scale cuts -------------
@@ -52,10 +57,9 @@ with open(args.chain) as f:
 
 assert len(inifile) > 0
 
-inifile = '\n'.join(inifile)
+inifile = u'\n'.join(inifile)
 
 print('Found PARAMS_INI')
-
 values = configparser.ConfigParser(strict=False)
 values.read_string(inifile)
 scale_cuts = {}
@@ -71,9 +75,16 @@ for name in data_sets:
 data_vector.mask_scales(scale_cuts)
 spectra = [data_vector.get_spectrum(s) for s in data_sets]
 
+
 e = []
 for s in spectra:
-    e.append(np.concatenate([s.get_pair(*p)[1] for p in s.get_bin_pairs()]))
+    # ! SJ begin ! #
+    nbinpairs = len(s.get_bin_pairs())
+    if nbinpairs == 0 : pass
+    else : 
+	e.append(np.concatenate([s.get_pair(*p)[1] for p in s.get_bin_pairs()]))
+    #e.append(np.concatenate([s.get_pair(*p)[1] for p in s.get_bin_pairs()]))
+    # ! SJ end ! #
 
 data = np.concatenate(e)
 
@@ -85,16 +96,21 @@ prec = np.linalg.inv(data_vector.covmat)
 #weight_i = labels.index('weight') if 'weight' in labels else -1
 #theory_i = np.array(['data_vector--2pt_theory_' in l for l in labels])
 
-like_i   = np.where(labels == 'like')[0]   if 'like'   in labels else -1
+# SJ begin
+#like_i   = np.where(labels == 'like')[0]   if 'like'   in labels else -1
+like_i   = np.where(labels == args.name_2ptlike)[0]  if args.name_2ptlike in labels else -1
+# SJ end
 prior_i  = np.where(labels == 'prior')[0]  if 'prior'  in labels else -1
 post_i   = np.where(labels == 'post')[0]   if 'post'   in labels else -1
 weight_i = np.where(labels == 'weight')[0] if 'weight' in labels else -1
 theory_i = np.array(['data_vector--2pt_theory_' in l for l in labels])
 
 assert like_i != -1 or (prior_i != -1 and post_i != -1)
-
+print like_i, post_i, weight_i, post_i
 total_is = 0.
 norm_fact = 0.
+
+
 
 print('Evaluating likelihoods...')
 
@@ -113,13 +129,10 @@ with open(args.chain) as f:
             if line[0] == '#':
                 continue
             vec = np.array(line.split(), dtype=np.float64)
-
             d = data - vec[theory_i]
             new_like = -np.einsum('i,ij,j', d, prec, d)/2
             log_is_weight = new_like - (vec[like_i] if like_i != -1 else vec[post_i]-vec[prior_i])
-
             weight = np.e**log_is_weight
-
             if weight_i != -1:
                 w = vec[weight_i]
 
