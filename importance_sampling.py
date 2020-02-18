@@ -75,10 +75,20 @@ assert len(inifile) > 0
 
 inifile = '\n'.join(inifile)
 
-print('Found PARAMS_INI')
+print('Found PARAMS_INI:')
+# print(inifile)
 
 values = configparser.ConfigParser(strict=False)
-values.read_string(inifile)
+## begin NW. Make compatible with Python 2.7
+import sys
+PY3 = sys.version_info[0] == 3
+if not PY3:
+    import StringIO
+    buf = StringIO.StringIO(inifile)
+    values.readfp(buf)
+else:
+    ## end NW
+    values.read_string(inifile) #Python3
 scale_cuts = {}
 
 data_vector = twopoint.TwoPointFile.from_fits(args.data_vector, 'covmat')
@@ -111,6 +121,13 @@ post_i   = np.where(labels == 'post')[0]   if 'post'   in labels else -1
 weight_i = np.where(labels == 'weight')[0] if 'weight' in labels else -1
 theory_i = np.array(['data_vector--2pt_theory_' in l for l in labels])
 
+## NW
+if theory_i.sum() == 0:
+    raise Exception("No theory vector columns found! Ensure your baseline chain has theory vector of form 'data_vector--2pt_theory_XX'?")
+else:
+    pass
+## end
+
 chi2_i   = np.where(labels == 'data_vector--2pt_chi2')[0] if 'data_vector--2pt_chi2' in labels else -1
 
 assert chi2_i != -1 or like_i != -1 or (prior_i != -1 and post_i != -1)
@@ -123,7 +140,7 @@ print('Evaluating likelihoods...')
 with open(args.chain) as f:
 
     with open(args.output, 'w+') as output:
-        output.write('#new_like\tweight\r\n')
+        output.write('#old_like\told_weight\tnew_like\tweight\r\n')
         output.write('#\r\n')
         output.write('# Importance sampling weights\r\n')
         output.write('# Chain: {}\r\n'.format(args.chain))
@@ -174,6 +191,6 @@ with open(args.chain) as f:
                 norm_fact += 1
                 total_is -= log_is_weight
 
-            output.write('%e\t%e\r\n' % (new_like, weight))
+            output.write('%e\t%e\t%e\t%e\r\n' % (vec[weight_i], old_like(vec), new_like, weight))
 
         output.write('# <log_weight> = %f\r\n' % (total_is/norm_fact))
