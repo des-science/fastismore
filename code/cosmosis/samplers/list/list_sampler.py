@@ -45,26 +45,27 @@ class ListSampler(ParallelSampler):
                     self.output.add_column(str(p), float)
             if self.output is not None:
                 for p in self.pipeline.extra_saves:
-		    # SJ begin ----------------------------------------------
-		    # *** from otavio 's code   
-		    # modification for importance sampling
-		    # This transforms the name data_vector/2pt_theory#457 into
-        	    # data_vector/2pt_theory_1, data_vector/2pt_theory_2, ... 
-		    #
-		    # original code : 
-		    # self.output.add_column('{}--{}'.format(*p), float)
-		    #
-		    # modification : 
-	            if ('#' in p[1]):
-        	        n,l = p[1].split('#')
-                	for i in range(1,int(l)+1):
-                    	    #extra_names.append('%s--%s_%d'%(section,n,i))
-			    self.output.add_column('%s--%s_%d'%(p[0],n,i), float)
-            	    else:
-			#pass
-                	#extra_names.append('%s--%s'%(section,name))
-                    	self.output.add_column('{}--{}'.format(*p), float)
-		    # SJ end ------------------------------------------------
+                # SJ begin ----------------------------------------------
+                # *** from otavio 's code   
+                # modification for importance sampling
+                # This transforms the name data_vector/2pt_theory#457 into
+                    # data_vector/2pt_theory_1, data_vector/2pt_theory_2, ... 
+                #
+                # original code : 
+                # self.output.add_column('{}--{}'.format(*p), float)
+                #
+                # modification : 
+                    if ('#' in p[1]):
+                        n,l = p[1].split('#')
+                        for i in range(1,int(l)+1):
+                                #extra_names.append('%s--%s_%d'%(section,n,i))
+                            self.output.add_column('%s--%s_%d'%(p[0],n,i), float)
+                    else:
+                        #pass
+                        #extra_names.append('%s--%s'%(section,name))
+                            self.output.add_column('{}--{}'.format(*p), float)
+                self.output.add_column('weight', float) ## NW
+                # SJ end ------------------------------------------------
                 for p,ptype in self.sampler_outputs:
                     self.output.add_column(p, ptype)
 
@@ -75,6 +76,8 @@ class ListSampler(ParallelSampler):
         file_options = {"filename":self.filename}
         column_names, samples, _, _, _ = TextColumnOutput.load_from_options(file_options)
         samples = samples[0]
+        ix_weight = -1 #assume no weight column ## NW
+        post_old = None # as a check, e.g. when running a list_sampler on a baseline chain to get theory values, expect same post ##NW
         # find where in the parameter vector of the pipeline
         # each of the table parameters can be found
         replaced_params = []
@@ -83,7 +86,15 @@ class ListSampler(ParallelSampler):
             try:
                 section,name = column_name.split('--')
             except ValueError:
-                print("Not including column %s as not a cosmosis name" % column_name)
+                ## NW start --- if weight column present in list, propogate it to output
+                if column_name == 'weight':
+                    print('Found weight column in input list. Copying to output chain.')
+                    ix_weight = i
+                    weights = samples[:, ix_weight]
+                elif column_name == 'post':
+                    post_old = samples[:, i]
+                ## NW end -------
+                    print("Not including column %s as not a cosmosis name" % column_name)
                 continue
             section = section.lower()
             name = name.lower()
@@ -94,12 +105,13 @@ class ListSampler(ParallelSampler):
                 replaced_params.append((i,j))
             except ValueError:
                 print("Not including column %s as not in values file" % column_name)
-        
-	#Create a collection of sample vectors at the start position.
+
+        #Create a collection of sample vectors at the start position.
         #This has to be a list, not an array, as it can contain integer parameters,
         #unlike most samplers
         v0 = self.pipeline.start_vector(all_params=True, as_array=False)
         sample_vectors = [v0[:] for i in range(len(samples))]
+
         #Fill in the varied parameters. We are not using the
         #standard parameter vector in the pipeline with its 
         #split according to the ini file
@@ -123,15 +135,27 @@ class ListSampler(ParallelSampler):
             results = self.pool.map(task, jobs)
         else:
             results = list(map(task, jobs))
-
         #Save the results of the sampling
         #We now need to abuse the output code a little.
-        for sample, result  in zip(sample_vectors, results):
+        ### NW start
+        post_new = np.zeros(len(samples))
+        if ix_weight == -1: # no input weight column so equally weight all samples in list
+            weights = np.ones(len(samples))*1./len(samples)
+        for i, (sample, result) in enumerate(zip(sample_vectors, results)):
             #Optionally save all the results calculated by each
             #pipeline run to files
             (prob, (prior,extra)) = result
+            post_new[i] = prob
             #always save the usual text output
-            self.output.parameters(sample, extra, prior, prob)
+            self.output.parameters(sample, extra, weights[i], prior, prob)
+        if post_old is not None: #alert if old and new posteriors don't match
+            if not np.allclose(post_new, post_old):
+                print('Warning: found posteriors in input list that dont match new posteriors!')
+                print('Mean weighted difference of ln(post): ', np.average(post_new - post_old, weights=weights))
+                print('RMS weighted difference of ln(post): ', np.average((post_new - post_old)**2, weights=weights)**0.5)
+            else:
+                'Passed: old and new posterior values agree.'
+        ### NW end
         #We only ever run this once, though that could 
         #change if we decide to split up the runs
         self.converged = True
