@@ -168,14 +168,18 @@ with open(args.chain) as f:
         
         # Different ways to recover old_like depending on columns found
         if chi2_i != -1:
+            print('Using -0.5*chi^2 column for log-like.')
             if args.include_norm:
+                print('Including detC in normalization of loglike')
                 old_like = lambda vec: -0.5*vec[chi2_i] - 0.5*log_det
             else:
                 old_like = lambda vec: -0.5*vec[chi2_i]
 
         elif like_i != -1:
+            print('Using like column.')
             old_like = lambda vec: vec[like_i]
         else:
+            print('Using post-prior for likelihood.')
             old_like = lambda vec: vec[post_i] - vec[prior_i]
 		
         loglikediff = []
