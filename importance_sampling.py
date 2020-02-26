@@ -199,15 +199,32 @@ with open(args.chain) as f:
             log_is_weight = new_like - old_like(vec) 
             loglikediff.append(log_is_weight)
 			
-            weight = np.e**log_is_weight #change in prob
+            ## Try to get ratio of likelihoods. If old likelihood is tiny, then we could be dividing two tiny numbers.
+            ## If the old chain point has essentially 0 for the weight, then set new point to 0 as well.
+            ## otherwise set to NaN 
+            # try:
+            #     likeratio = np.e**log_is_weight #change in prob
+            # except OverflowError: 
+            #     if (weight_i != -1) and vec[weight_i] < 1.e-300:
+            #         likeratio = 0
+            #     else:
+            #         likeratio = NaN
+                    
+            #avoid dividing tiny numbers
+            if (weight_i != -1) and vec[weight_i] < 1.e-300:
+                likeratio = 0
+            else:
+                likeratio = np.e**log_is_weight #change in prob
+                    
             if weight_i != -1:
                 w_old = vec[weight_i] #old weight from baseline chain
 				
-                weight *= w_old #new weight
+                weight = likeratio * w_old #new weight
                 norm_fact += w_old
                 total_is -= log_is_weight * w_old
             else:
                 w_old = 1.
+                weight = likeratio * w_old #new weight
                 norm_fact += 1
                 total_is -= log_is_weight
             oldweights.append(w_old)
