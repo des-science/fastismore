@@ -110,6 +110,18 @@ class ListSampler(ParallelSampler):
         #This has to be a list, not an array, as it can contain integer parameters,
         #unlike most samplers
         v0 = self.pipeline.start_vector(all_params=True, as_array=False)
+        
+        if ix_weight != -1: #if weight column, only run at points where weight is above minweight
+            minweight = 1.e-9
+            usebool = (samples[:,ix_weight] >= minweight)
+            print('Only sampling at points with weight > {}'.format(minweight))
+            print('{:.2g}% of samples dropped.'.format(usebool.sum()*100./len(samples)))
+            samples = samples[usebool]
+            weights = samples[:, ix_weight]
+        else:
+            usebool = np.ones(len(samples), dtype=bool)
+        post_old = post_old[usebool]
+        
         sample_vectors = [v0[:] for i in range(len(samples))]
 
         #Fill in the varied parameters. We are not using the
