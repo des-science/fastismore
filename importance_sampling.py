@@ -111,8 +111,8 @@ for s in spectra:
     # ! SJ begin ! #
     nbinpairs = len(s.get_bin_pairs())
     if nbinpairs == 0 : pass
-    else : 
-	e.append(np.concatenate([s.get_pair(*p)[1] for p in s.get_bin_pairs()]))
+    else: 
+        e.append(np.concatenate([s.get_pair(*p)[1] for p in s.get_bin_pairs()]))
     #e.append(np.concatenate([s.get_pair(*p)[1] for p in s.get_bin_pairs()]))
     # ! SJ end ! #
 
@@ -235,5 +235,5 @@ with open(args.chain) as f:
         oldweights = np.array(oldweights)
         loglikediff = np.array(loglikediff)
         # print 'weighted average difference of logposterior: ', total_is/norm_fact
-        print 'Weighted average difference of logposterior: ', -np.average(loglikediff, weights=oldweights)
-        print 'Weighted RMS difference of logposterior: ', np.average(loglikediff**2, weights=oldweights)**0.5
+        print('Weighted average difference of logposterior: ', -np.average(loglikediff, weights=oldweights))
+        print('Weighted RMS difference of logposterior: ', np.average(loglikediff**2, weights=oldweights)**0.5)

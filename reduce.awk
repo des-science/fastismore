@@ -13,7 +13,7 @@ NR == 1 {
 	for(i = 1; i <= NF; i++) {
 		if(tolower($i) !~ /^data_vector/) {
 			indices[length(indices) + 1] = i;
-			printf "%s\t", $i;
+			printf "%s ", $i;
 		}
 	}
 	printf "\n";
@@ -25,7 +25,7 @@ NR == 1 {
 /^[^#]/ {
 	# Print only columns in the indices array
 	for(i in indices){
-		printf "%s\t", $indices[i];
+		printf "%s ", $indices[i];
 	}
 	printf "\n";
 }
