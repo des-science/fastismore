@@ -97,6 +97,12 @@ label_dict = {'cosmological_parameters--w0_fld':  r'w_{GDM}',
               'wl_photoz_errors--bias_4': 'z^s_4',
               }
 
+def get_labeldict():
+    return label_dict
+
+def get_params2plot():
+    return params2plot
+
 def load_chain(filename, burn=0):
     with open(filename) as f:
         labels = np.array(f.readline()[1:-1].lower().split())
@@ -141,6 +147,18 @@ def get_dloglike_stats(ISdata):
     
     return dloglike, rmsdloglike
     
+def get_ESS(ISdata, weight_by_multiplicity=True):
+    """compute and return effective sample size of IS chain. 
+    (see e.g. http://www.nowozin.net/sebastian/blog/effective-sample-size-in-importance-sampling.html)"""
+    #want stats on change to weights, but noisier if compute from new_weight/old_weight, so use e^dloglike directly.
+    weight_ratio = np.exp(ISdata['new_like'] - ISdata['old_like'])
+    Nsamples = len(weight_ratio)
+    if weight_by_multiplicity: 
+        mult = ISdata['old_weight']
+    else:
+        mult = np.ones_like(weight_ratio)
+    normed_weights = weight_ratio / (Nsamples*np.average(weight_ratio, weights=mult)) #really doing weighted sum
+    return 1./(Nsamples*np.average(normed_weights**2, weights=mult))
     
 def add_IS_chain(cc_base, filename, params2plot, baseline_data, burn=0, label='IS', append_stats=True):
     """load and add IS chain to current chainconsumer object.
@@ -172,7 +190,7 @@ def plot_weights(ISdata, label='IS', ax=None, plotbaseline=True, stats=True):
     ax.set_ylabel('weight', fontsize=20)
     ax.set_xlabel('Sample', fontsize=20)
     if stats:
-        ax.text(0.01, 0.95, '({:.2g}, {:.2g})'.format(*get_dloglike_stats(ISdata)),
+        ax.text(0.01, 0.95, '({:.2g}, {:.2g}, {:.2g})'.format(get_ESS(ISdata)/len(ISdata['weight']), *get_dloglike_stats(ISdata)),
                 verticalalignment='top', horizontalalignment='left',
                 transform=ax.transAxes, fontsize=16)
     ax.legend(loc=2, fontsize=20)
@@ -213,6 +231,9 @@ def plot_weights(ISdata, label='IS', ax=None, plotbaseline=True, stats=True):
 #fig.savefig(output_filename)
 #
 ##--------
+    
+#chain_filename = baseline_chain
+#is_filelist = IS_out_fnlist
     
 if __name__ == "__main__":
     print 'RUNNING AS MAIN'
