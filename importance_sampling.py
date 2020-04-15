@@ -232,8 +232,25 @@ with open(args.chain) as f:
             output.write('%e\t%e\t%e\t%e\r\n' % (old_like(vec), w_old, new_like, weight))
 
         output.write('# <log_weight> = %f\r\n' % (total_is/norm_fact))
+
         oldweights = np.array(oldweights)
         loglikediff = np.array(loglikediff)
-        # print 'weighted average difference of logposterior: ', total_is/norm_fact
-        print 'Weighted average difference of logposterior: ', -np.average(loglikediff, weights=oldweights)
-        print 'Weighted RMS difference of logposterior: ', np.average(loglikediff**2, weights=oldweights)**0.5
+        Nsample = len(loglikediff)
+        
+        loglikediff_mean = np.average(loglikediff, weights=oldweights)
+        loglikediff_rms = np.average(loglikediff**2, weights=oldweights)**0.5
+        
+        #calc importance sampling effective sample size.
+        weight_ratio = np.exp(loglikediff)
+        normed_weights = weight_ratio / (Nsample * np.average(weight_ratio, weights=oldweights)) #really doing weighted sum
+        eff_sample_frac = 1./(Nsample * np.average(normed_weights**2, weights=oldweights))
+
+        
+        #TODO: ESS using e^loglikediff and normalized correctly.
+        print 'Weighted average difference of logposterior: ', -loglikediff_mean #this should match total_is/normfact
+        print 'Check: same result, using individual calculation: ', total_is/norm_fact
+        print 'Weighted RMS difference of logposterior: ', loglikediff_rms
+        print 'Baseline Sample Size     = {}'.format(Nsample)
+
+        output.write('# RMS(log_weight) = %f\r\n' % (loglikediff_rms))
+#        output.write('# Effective sample size = %f\r\n' % (Nsample_eff_IS/Nsample))
