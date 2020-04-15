@@ -155,26 +155,21 @@ def get_dloglike_stats(ISdata):
     return dloglike, rmsdloglike
     
 def get_ESS(ISdata, weight_by_multiplicity=True):
-    """compute and return effective sample size of IS chain, and ESS of baseline chain.
-    Ratio should be good metric of accuracy of IS chain.
+    """compute and return effective sample size of IS chain. 
+    If IS chain is identical to baseline, then just equals full sample size.
+    Insensitive to multiplicative scaling, i.e. if IS chain shows all points exactly half as likely, will not show up in ESS,
+    so use mean_dloglike stat for that.
     (see e.g. https://arxiv.org/pdf/1602.03572.pdf or 
     http://www.nowozin.net/sebastian/blog/effective-sample-size-in-importance-sampling.html)"""
-    #get ESS of just the baseline chain, without IS weights
-    normed_weights_bl = (ISdata['old_weight'] / np.sum(ISdata['old_weight']))
-    ess_bl = 1./(normed_weights_bl**2).sum()
-    
     #want stats on change to weights, but noisier if compute from new_weight/old_weight, so use e^dloglike directly.
     weight_ratio = np.exp(ISdata['new_like'] - ISdata['old_like'])
-    
-    #generally yes, else EMCEE and MN won't give same answers
+    Nsamples = len(weight_ratio)
     if weight_by_multiplicity: 
         mult = ISdata['old_weight']
     else:
         mult = np.ones_like(weight_ratio)
-    
-    normed_weights = weight_ratio * mult / np.sum(weight_ratio * mult)
-    ess_is = 1./(normed_weights**2).sum()
-    return ess_is, ess_bl
+    normed_weights = weight_ratio / (np.average(weight_ratio, weights=mult)) #pulled out factor of Nsamples
+    return Nsamples * 1./(np.average(normed_weights**2, weights=mult))
 
 def add_IS_chain(cc_base, filename, params2plot, baseline_data, burn=0, label='IS', append_stats=True):
     """load and add IS chain to current chainconsumer object.
