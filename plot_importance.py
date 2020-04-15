@@ -18,8 +18,8 @@ params2plot = [
 #     'cosmological_parameters--omnuh2',
 #     'cosmological_parameters--sigma_8',
      'cosmological_parameters--s8',
-     'cosmological_parameters--w',
-     'cosmological_parameters--wa',
+#     'cosmological_parameters--w',
+#     'cosmological_parameters--wa',
 #     'intrinsic_alignment_parameters--a',
 #     'intrinsic_alignment_parameters--alpha',
 #     'bin_bias--b1',
@@ -104,10 +104,17 @@ def get_params2plot():
     return params2plot
 
 def load_chain(filename, burn=0):
+    data = []
     with open(filename) as f:
         labels = np.array(f.readline()[1:-1].lower().split())
-
-    return {labels[i]: l for i, l in enumerate(np.loadtxt(filename)[burn:,:].T)}
+        mask = ["data_vector" not in l for l in labels]
+        for line in f.readlines():
+            if '#' in line:
+                continue
+            else:
+                data.append(np.array(line.split(), dtype=np.double)[mask])
+    data = {labels[mask][i]: col for i,col in enumerate(np.array(data)[burn:,:].T)}
+    return data
 
 get_label = np.vectorize(lambda label: label_dict[label] if label in label_dict.keys() else label)
 
@@ -245,7 +252,7 @@ def plot_weights(ISdata, label='IS', ax=None, plotbaseline=True, stats=True):
 #is_filelist = IS_out_fnlist
     
 if __name__ == "__main__":
-    print 'RUNNING AS MAIN'
+    print('RUNNING AS MAIN')
     burn = 0
     chain_filename = sys.argv[1]
     is_filelist = sys.argv[2:-1]
