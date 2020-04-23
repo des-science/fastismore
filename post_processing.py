@@ -12,236 +12,327 @@ import argparse
 import logging
 logging.disable()
 
+not_param = [
+		'like',
+		'old_like',
+		'delta_loglike',
+		'new_like',
+		'prior',
+		'post',
+		'2pt_like',
+		'old_weight',
+		'weight',
+]
+
+label_dict = {
+	'cosmological_parameters--tau':  r'\tau',
+	'cosmological_parameters--w':  r'w',
+	'cosmological_parameters--wa':  r'w_a',
+	'cosmological_parameters--w0_fld':  r'w_{GDM}',
+	'cosmological_parameters--cs2_fld': r'c_s^2',
+	'cosmological_parameters--log_cs2': r'log(c_s^2)',
+	'cosmological_parameters--omega_m': r'\Omega_m',
+	'cosmological_parameters--omega_c': r'\Omega_c',
+	'cosmological_parameters--ommh2': r'\Omega_m h^2',
+	'cosmological_parameters--ombh2': r'\Omega_b h^2',
+	'cosmological_parameters--omch2': r'\Omega_c h^2',
+	'cosmological_parameters--h0':      r'h',
+	'cosmological_parameters--omega_b': r'\Omega_b',
+	'cosmological_parameters--n_s':     r'n_s',
+	'cosmological_parameters--a_s':     r'A_s',
+	'cosmological_parameters--omnuh2':  r'\Omega_{\nu}',
+	'cosmological_parameters--sigma_8': r'\sigma_8',
+	'cosmological_parameters--s8': r'S_8',
+	'intrinsic_alignment_parameters--a': r'A_{IA}',
+	'intrinsic_alignment_parameters--alpha': r'\alpha_{IA}',
+	'bin_bias--b1': r'b_1',
+	'bin_bias--b2': r'b_2',
+	'bin_bias--b3': r'b_3',
+	'bin_bias--b4': r'b_4',
+	'bin_bias--b5': r'b_5',
+	'shear_calibration_parameters--m1': r'm_1',
+	'shear_calibration_parameters--m2': r'm_2',
+	'shear_calibration_parameters--m3': r'm_3',
+	'shear_calibration_parameters--m4': r'm_4',
+	'lens_photoz_errors--bias_1': r'z^l_1',
+	'lens_photoz_errors--bias_2': r'z^l_2',
+	'lens_photoz_errors--bias_3': r'z^l_3',
+	'lens_photoz_errors--bias_4': r'z^l_4',
+	'lens_photoz_errors--bias_5': r'z^l_5',
+	'wl_photoz_errors--bias_1': r'z^s_1',
+	'wl_photoz_errors--bias_2': r'z^s_2',
+	'wl_photoz_errors--bias_3': r'z^s_3',
+	'wl_photoz_errors--bias_4': r'z^s_4',
+}
+
+param_to_label = np.vectorize(lambda param: '${}$'.format(label_dict[param]))
+
+def get_default_cc():
+	cc = ChainConsumer()
+
+	# Some plot configurations
+	cc.configure(linestyles="-", linewidths=1.0,
+		shade=False, shade_alpha=0.5, sigmas=[1,2], kde=kde,
+		label_font_size=20, tick_font_size=20, legend_color_text=True)
+
+def plot_cc(cc, params2plot):
+	fig = cc.plotter.plot(parameters=params2plot)
+	fig.set_size_inches(4.5 + fig.get_size_inches())
+	return fig
+
 class Chain:
-    """Description: Generic chain object"""
+	"""Description: Generic chain object"""
 
-    def __init__(self, filename):
-        self.not_param = [
-                'like',
-                'old_like',
-                'delta_loglike',
-                'new_like',
-                'prior',
-                'post',
-                '2pt_like',
-                'old_weight',
-                'weight',
-        ]
+	def __init__(self, filename):
+		self.__load(filename)
 
-        self.label_dict = {
-            'cosmological_parameters--tau':  r'\tau',
-            'cosmological_parameters--w':  r'w',
-            'cosmological_parameters--wa':  r'w_a',
-            'cosmological_parameters--w0_fld':  r'w_{GDM}',
-            'cosmological_parameters--cs2_fld': r'c_s^2',
-            'cosmological_parameters--log_cs2': r'log(c_s^2)',
-            'cosmological_parameters--omega_m': r'\Omega_m',
-            'cosmological_parameters--omega_c': r'\Omega_c',
-            'cosmological_parameters--ommh2': r'\Omega_m h^2',
-            'cosmological_parameters--ombh2': r'\Omega_b h^2',
-            'cosmological_parameters--omch2': r'\Omega_c h^2',
-            'cosmological_parameters--h0':      r'h',
-            'cosmological_parameters--omega_b': r'\Omega_b',
-            'cosmological_parameters--n_s':     r'n_s',
-            'cosmological_parameters--a_s':     r'A_s',
-            'cosmological_parameters--omnuh2':  r'\Omega_{\nu}',
-            'cosmological_parameters--sigma_8': r'\sigma_8',
-            'cosmological_parameters--s8': r'S_8',
-            'intrinsic_alignment_parameters--a': r'A_{IA}',
-            'intrinsic_alignment_parameters--alpha': r'\alpha_{IA}',
-            'bin_bias--b1': 'b_1',
-            'bin_bias--b2': 'b_2',
-            'bin_bias--b3': 'b_3',
-            'bin_bias--b4': 'b_4',
-            'bin_bias--b5': 'b_5',
-            'shear_calibration_parameters--m1': 'm_1',
-            'shear_calibration_parameters--m2': 'm_2',
-            'shear_calibration_parameters--m3': 'm_3',
-            'shear_calibration_parameters--m4': 'm_4',
-            'lens_photoz_errors--bias_1': 'z^l_1',
-            'lens_photoz_errors--bias_2': 'z^l_2',
-            'lens_photoz_errors--bias_3': 'z^l_3',
-            'lens_photoz_errors--bias_4': 'z^l_4',
-            'lens_photoz_errors--bias_5': 'z^l_5',
-            'wl_photoz_errors--bias_1': 'z^s_1',
-            'wl_photoz_errors--bias_2': 'z^s_2',
-            'wl_photoz_errors--bias_3': 'z^s_3',
-            'wl_photoz_errors--bias_4': 'z^s_4',
-        }
-        self.__load(filename)
+	def __load(self, filename):
+		data = []
+		with open(filename) as f:
+			labels = np.array(f.readline()[1:-1].lower().split())
+			mask = ["data_vector" not in l for l in labels]
+			for line in f.readlines():
+				if '#' in line:
+					continue
+				else:
+					data.append(np.array(line.split(), dtype=np.double)[mask])
+		self.data = {labels[mask][i]: col for i,col in enumerate(np.array(data).T)}
+		return self.data
 
-    def __load(self, filename):
-        data = []
-        with open(filename) as f:
-            labels = np.array(f.readline()[1:-1].lower().split())
-            mask = ["data_vector" not in l for l in labels]
-            for line in f.readlines():
-                if '#' in line:
-                    continue
-                else:
-                    data.append(np.array(line.split(), dtype=np.double)[mask])
-        self.data = {labels[mask][i]: col for i,col in enumerate(np.array(data).T)}
-        return self.data
+	def add_extra(self):
+		self.data['cosmological_parameters--s8'] = \
+			self.data['cosmological_parameters--sigma_8']*(self.data['cosmological_parameters--omega_m']/0.3)**0.5
 
-    def add_extra(self):
-        self.data['cosmological_parameters--s8'] = \
-            self.data['cosmological_parameters--sigma_8']*(self.data['cosmological_parameters--omega_m']/0.3)**0.5
+		self.data['cosmological_parameters--ommh2'] = \
+			self.data['cosmological_parameters--omega_m']*self.data['cosmological_parameters--h0']**2
 
-        self.data['cosmological_parameters--ommh2'] = \
-            self.data['cosmological_parameters--omega_m']*self.data['cosmological_parameters--h0']**2
+		self.data['cosmological_parameters--ombh2'] = \
+			self.data['cosmological_parameters--omega_b']*self.data['cosmological_parameters--h0']**2
 
-        self.data['cosmological_parameters--ombh2'] = \
-            self.data['cosmological_parameters--omega_b']*self.data['cosmological_parameters--h0']**2
+		self.data['cosmological_parameters--omch2'] = \
+			self.data['cosmological_parameters--ommh2'] - self.data['cosmological_parameters--ombh2']
 
-        self.data['cosmological_parameters--omch2'] = \
-            self.data['cosmological_parameters--ommh2'] - self.data['cosmological_parameters--ombh2']
+		self.data['cosmological_parameters--omega_c'] = \
+			self.data['cosmological_parameters--omega_m'] - self.data['cosmological_parameters--omega_b']
 
-        self.data['cosmological_parameters--omega_c'] = \
-            self.data['cosmological_parameters--omega_m'] - self.data['cosmological_parameters--omega_b']
+	def get_params(self):
+		return [l for l in self.data.keys() if l not in not_param]
 
-    def get_params(self):
-        return [l for l in self.data.keys() if l not in self.not_param]
+	def get_labels(self):
+		return param_to_label(self.get_params)
 
-    def get_labels(self):
-        return ['$'+self.label_dict[l]+'$' for l in self.get_params()]
+	def on_params(self):
+		return np.array([self.data[l] for l in self.get_params()]).T
 
-    def on_params(self):
-        return np.array([self.data[l] for l in self.get_params()]).T
+	def add_to_cc(self, cc):
+		cc.add_chain(chain=self.on_params(), parameters=self.get_labels(), name='Baseline',
+				weights=self.data['weight'] if 'weight' in self.data.keys() else None)
+
+		return cc
 
 
 class ImportanceChain(Chain):
-    """Description: object to load the importance weights, plot and compute statistics.
-       Should be initialized with reference to the respective baseline chain: ImportanceChain(base_chain)"""
+	"""Description: object to load the importance weights, plot and compute statistics.
+	   Should be initialized with reference to the respective baseline chain: ImportanceChain(base_chain)"""
 
-    def __init__(self, filename, base_chain):
-        super().__init__(filename)
-        self.base = base_chain
+	def __init__(self, filename, base_chain, name="IS"):
+		super().__init__(filename)
+		self.base = base_chain
+		self.name = name
 
-    def get_diagnostics(self):
-        """compute effective sample size and weighted average,rms of loglikelihood difference.
-        returns (eff_nsample, mean_dloglike, rms_dloglike)"""
+	def get_diagnostics(self):
+		"""compute effective sample size and weighted average,rms of loglikelihood difference.
+		returns (eff_nsample, mean_dloglike, rms_dloglike)"""
 
-        assert self.data
+		assert self.data
 
-        log_importance_weights = self.data['new_like'] - self.data['old_like']
-        importance_weights = np.exp(log_importance_weights, dtype=np.float128)
+		log_importance_weights = self.data['new_like'] - self.data['old_like']
+		importance_weights = np.exp(log_importance_weights, dtype=np.float128)
 
-        if(np.max(importance_weights) >= 1e158):
-            pass
+		if(np.max(importance_weights) >= 1e158):
+			pass
 
-        mean_dloglike = np.average(log_importance_weights,    weights=self.data['old_weight'])
-        rms_dloglike  = np.average(log_importance_weights**2, weights=self.data['old_weight'])**0.5
+		mean_dloglike = np.average(log_importance_weights,    weights=self.data['old_weight'])
+		rms_dloglike  = np.average(log_importance_weights**2, weights=self.data['old_weight'])**0.5
 
-        mean_importance_weights_squared = np.average(importance_weights,    weights=self.data['old_weight'])**2
-        rms_importance_weights_squared  = np.average(importance_weights**2, weights=self.data['old_weight'])
+		mean_importance_weights_squared = np.average(importance_weights,    weights=self.data['old_weight'])**2
+		rms_importance_weights_squared  = np.average(importance_weights**2, weights=self.data['old_weight'])
 
-        eff_nsample_frac = mean_importance_weights_squared / rms_importance_weights_squared
+		eff_nsample_frac = mean_importance_weights_squared / rms_importance_weights_squared
 
-        nsample = len(importance_weights)
-        eff_nsample = nsample * eff_nsample_frac
+		nsample = len(importance_weights)
+		eff_nsample = nsample * eff_nsample_frac
 
-        return eff_nsample, mean_dloglike, rms_dloglike
+		return eff_nsample, mean_dloglike, rms_dloglike
 
-    def dist_from_baseline(self):
-        self.__check_cc()
+	def get_dloglike_stats(self):
+		"""compute weighted average and rms of loglikelihood difference. Should be <~ O(1).
+		returns (dloglike, rms_dloglike)"""
+		dloglike = -np.average(self.data['new_like'] - self.data['old_like'], weights=self.data['old_weight'])
+		rmsdloglike = np.average((self.data['new_like'] - self.data['old_like'])**2, weights=self.data['old_weight'])**0.5
+	
+		return dloglike, rmsdloglike
+	
+	def get_ESS(ISdata, weight_by_multiplicity=True):
+		"""compute and return effective sample size of IS chain. (author: Noah Weaverdyck)
+		If IS chain is identical to baseline, then just equals full sample size.
+		Insensitive to multiplicative scaling, i.e. if IS chain shows all points exactly half as likely, will not show up in ESS,
+		so use mean_dloglike stat for that.
+		(see e.g. https://arxiv.org/pdf/1602.03572.pdf or 
+		http://www.nowozin.net/sebastian/blog/effective-sample-size-in-importance-sampling.html)"""
+		#want stats on change to weights, but noisier if compute from new_weight/old_weight, so use e^dloglike directly.
+		weight_ratio = np.exp(ISdata['new_like'] - ISdata['old_like'])
+		Nsamples = len(weight_ratio)
+		if weight_by_multiplicity: 
+			mult = ISdata['old_weight']
+		else:
+			mult = np.ones_like(weight_ratio)
+		normed_weights = weight_ratio / (np.average(weight_ratio, weights=mult)) #pulled out factor of Nsamples
+		return Nsamples * 1./(np.average(normed_weights**2, weights=mult))
 
-        params, cov_param = self.c.get_covariance(0)
-        summ_0, summ_1 = self.c.get_summary()
+	def add_to_cc(self, cc, weight_threshold=1e-20):
+		weights = self.data['weight']
 
-        d_0 = np.array([summ_0[p][0] for p in self.base.get_labels()], dtype=np.double)
-        d_1 = np.array([summ_1[p][0] for p in self.base.get_labels()], dtype=np.double)
+		if weight_threshold:
+			mask = [w >= weight_threshold for w in weights]
+		else:
+			mask = [True for w in weights]
 
-        d = d_0 - d_1
+		cc.add_chain(chain=self.base.on_params()[mask,:], parameters=self.base.get_labels(), name=self.name,
+				weights=weights[mask])
 
-        dist = np.sqrt(np.einsum('i,ij,j', d, np.linalg.inv(cov_param), d))
+		return cc
 
-        return dist
+	def __build_cc(self, force_build=False):
+		"""Some internal computations require a cc consumer object, so we build a basic one here."""
 
-    def __check_cc(self):
-        if not hasattr(self, 'c'):
-            self.__build_cc()
+		if not force_build and hasattr(self, 'cc'):
+			return self.cc
 
-    def __build_cc(self):
+		assert self.base and self.data
 
-        assert self.base and self.data
+		self.cc = get_default_cc()
 
-        self.c = ChainConsumer()
+		self.base.add_to_cc(self.cc)
+		self.add_to_cc(self.cc)
 
-        weights = self.data['weight']
-        mask = [w >= 1e-20 for w in weights]
+		return self.cc
 
-        self.c.add_chain(self.base.on_params()[mask,:], parameters=self.base.get_labels(), name='Base',
-                weights=self.base.data['weight'][mask] if 'weight' in self.base.data.keys() else None)
+	def dist_from_baseline(self):
+		"""Computes the distance between mean baseline and mean is in units of sigma."""
+		self.__build_cc()
 
-        self.c.add_chain(self.base.on_params()[mask,:], parameters=self.base.get_labels(), name='IS',
-                weights=weights[mask]) 
+		params, cov_param = self.cc.get_covariance(0)
+		summ_0, summ_1 = self.cc.get_summary()
 
-        return self.c
+		d_0 = np.array([summ_0[p][0] for p in self.base.get_labels()], dtype=np.double)
+		d_1 = np.array([summ_1[p][0] for p in self.base.get_labels()], dtype=np.double)
 
-    def plot(self, params2plot, output_dir, plot_base=False, kde=False):
+		d = d_0 - d_1
 
-        self.__check_cc()
+		dist = np.sqrt(np.einsum('i,ij,j', d, np.linalg.inv(cov_param), d))
 
-        # Some plot configurations
-        self.c.configure(linestyles="-", linewidths=1.0,
-                    shade=False, shade_alpha=0.5, sigmas=[1,2], kde=kde,
-                    label_font_size=20, tick_font_size=20, legend_color_text=True)
+		return dist
 
-        fig = self.c.plotter.plot(parameters=params2plot)
-        fig.set_size_inches(4.5 + fig.get_size_inches())
-        fig.savefig(output_dir+"/triangle_plot.svg")
+	def plot(self, params2plot):
+		"""Basic triangle plot with baseline and is contours superposed."""
+		return plot_cc(self.__build_cc())
 
-    def get_summary(self):
-        """ returns the mean parameter values"""
-        self.__check_cc()
+	def plot_weights(self, ax=None, plotbaseline=True, stats=True):
+		if ax is None:
+			f, ax = plt.subplots(figsize=(10,2))
+		if plotbaseline:
+			ax.plot(self.data['old_weight'], label='Baseline', zorder=2)
+		ax.plot(self.data['weight'], label=self.name, alpha=0.5)
+		ax.set_ylabel('weight', fontsize=20)
+		ax.set_xlabel('Sample', fontsize=20)
+		if stats:
+			ax.text(0.01, 0.95, '({:.2g}, {:.2g}, {:.2g})'.format(get_ESS(self.data)/len(self.data['weight']), *get_dloglike_stats(self.data)),
+					verticalalignment='top', horizontalalignment='left',
+					transform=ax.transAxes, fontsize=16)
+		ax.legend(loc=2, fontsize=20)
 
-        summary = self.c.analysis.get_summary(squeeze=False)
-        return summary[1]
+		return ax
+
+	def get_summary(self):
+		""" returns the mean parameter values"""
+		self.__build_cc()
+
+		summary = self.cc.analysis.get_summary(squeeze=False)
+		return summary[1]
 
 def main():
-    parser = argparse.ArgumentParser(description = '')
+	parser = argparse.ArgumentParser(description = '')
 
-    parser.add_argument('chain', help = 'Base chain filename.')
-    parser.add_argument('importance_weights', help = 'Importance sampling weights filename.')
-    parser.add_argument('output', help = 'Output dir.')
+	parser.add_argument('chain', help = 'Base chain filename.')
+	parser.add_argument('importance_weights', nargs='+' help = 'Importance sampling weights filename.')
+	parser.add_argument('output', help = 'Output root.')
 
-    parser.add_argument('--burn-in', dest = 'burn',
-                           default = 0, required = False,
-                           help = 'Number of samples to burn-in.')
+	# parser.add_argument('--burn-in', dest = 'burn',
+	# 					    default = 0, required = False,
+	# 					    help = 'Number of samples to burn-in.')
 
-    parser.add_argument('--svg', dest = 'svg', action='store_true',
-                           help = 'Export figures in svg format.')
+	parser.add_argument('--fig-format', dest = 'fig_format',
+						default = 'svg', required = False,
+						help = 'Export figures in specified format.')
 
-    parser.add_argument('--triangle-plot', dest = 'triangle_plot', action='store_true',
-                           help = 'Generate triangle plots.')
+	parser.add_argument('--triangle-plot', dest = 'triangle_plot', action='store_true',
+						help = 'Generate triangle plots.')
 
-    parser.add_argument('--base-plot', dest = 'base_plot', action='store_true',
-                           help = 'Include base chain in triangle plots.')
+	parser.add_argument('--base-plot', dest = 'base_plot', action='store_true',
+						help = 'Include base chain in triangle plots.')
 
-    parser.add_argument('--stats', dest = 'stats', action='store_true',
-                           help = 'Compute importance sampling statistics.')
+	parser.add_argument('--plot-weights', dest = 'plot_weights', action='store_true',
+						help = 'Plot importance weights.')
 
-    parser.add_argument('--all', dest = 'all', action='store_true',
-                           help = 'Same as --stats --triangle-plot --base-plot.')
+	parser.add_argument('--stats', dest = 'stats', action='store_true',
+						help = 'Compute importance sampling statistics.')
 
-    parser.add_argument('--kde', dest = 'kde', action='store_true',
-                           help = 'Uses KDE smoothing in the triangle plot.')
+	parser.add_argument('--all', dest = 'all', action='store_true',
+						help = 'Same as --stats --triangle-plot --base-plot.')
 
-    args = parser.parse_args()
+	parser.add_argument('--kde', dest = 'kde', action='store_true',
+						help = 'Uses KDE smoothing in the triangle plot.')
 
-    if args.all:
-        args.stats = True
-        args.triangle_plot = True
-        args.base_plot = True
+	args = parser.parse_args()
 
-    base_chain = Chain(args.chain)
-    importance = ImportanceChain(args.importance_weights, base_chain)
-    
-    #print(args.importance_weights, importance.get_summary()['$\\Omega_m$'][1], *importance.get_diagnostics())
-    print(args.importance_weights, *importance.get_diagnostics())
+	if args.all:
+		args.stats = True
+		args.triangle_plot = True
+		args.base_plot = True
 
-    #importance.plot(['cosmological_parameters--omega_m'], args.output, plot_base=args.base_plot, kde=args.kde)
-    #print(importance.stat_bias())
+	base_chain = Chain(args.chain)
+	is_chains = [ImportanceChain(iw_filename, base_chain, name='IS{}'.format(i)) for i, iw_filename in enumerate(args.importance_weights)]
+
+	N_IS = len(is_chains)
+
+	# Plot IS weights
+	if args.plot_weights:
+		f, axes = plt.subplots(N_IS, figsize=(10, 2*N_IS))
+		for i,is_chain in enumerate(is_chains):
+			is_chain.plot_weights(ax=axes[i] if N_IS > 1 else axes)
+		f.savefig(args.output + '_weights.' + args.fig_format, bbox_inches='tight')
+
+	# Make triangle plot
+	if args.triangle_plot:
+		cc = get_default_cc()
+		
+		base_chain.add_to_cc(cc)
+
+		for is_chain in is_chains:
+			is_chain.add_to_cc(cc)
+
+		plot_cc(cc).savefig(args.output + '_triangle.' + args.fig_format)
+
+	if args.stats:
+		for is_chain in is_chains:
+			is_chain.get_diagnostics()
+	
+	#print(args.importance_weights, importance.get_summary()['$\\Omega_m$'][1], *importance.get_diagnostics())
+	print(args.importance_weights, *importance.get_diagnostics())
+
+	#importance.plot(['cosmological_parameters--omega_m'], args.output, plot_base=args.base_plot, kde=args.kde)
+	#print(importance.stat_bias())
 
 if __name__ == "__main__":
-    main()
+	main()
