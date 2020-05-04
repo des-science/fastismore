@@ -1,0 +1,571 @@
+current_dir = github.com/des-science/y3-3x2pt-methods/cosmosis (commit=482c3b92bd6bdd0706e18c0616e6261d033d041c)
+
+timestamp=2020-04-27T19:58:27.354711
+platform_version=#97-Ubuntu SMP Wed Apr 1 03:25:46 UTC 2020
+platform=Linux-4.15.0-96-generic-x86_64-with-Ubuntu-18.04-bionic
+csl_git_version=30e90c9e8882aa6505e2019ad8b6ef4196471109
+cwd_git_version=482c3b92bd6bdd0706e18c0616e6261d033d041c
+cosmosis_git_version=a7f39b5af97f863ed9297b2e536548db7f425110
+
+START_OF_PARAMS_INI
+[DEFAULT]
+baseline_dir = .
+datavector_dir = .
+2pt_file = data_vectors/successful_sim_fiducial.fits
+2pt_data_sets = xip xim gammat wtheta
+run_name = fiducial
+action = save_2pt
+
+[runtime]
+sampler = grid
+root = /home/alonso/cosmosis
+pre_script = ./pre_script.sh
+
+[multinest]
+max_iterations = 50000
+multinest_outfile_root = %(RUN_NAME)s/mn_successful_sim_fiducial.fits_scales_3x2pt_Y1.ini_lcdm
+resume = T
+live_points = 250
+efficiency = 0.3
+tolerance = 0.01
+constant_efficiency = F
+
+[output]
+filename = %(RUN_NAME)s/chain_%(RUN_NAME)s_successful_sim_fiducial.fits_scales_3x2pt_Y1.ini_lcdm.txt
+format = text
+lock = F
+privacy = F
+
+[emcee]
+walkers = 100
+samples = 1000
+nsteps = 5
+
+[star]
+nsample_dimension = 50
+
+[test]
+save_dir = %(RUN_NAME)s/test_successful_sim_fiducial.fits_%(RUN_NAME)s
+fatal_errors = T
+
+[pipeline]
+modules = consistency camb halofit extrapolate fits_nz lens_photoz_bias fast_pt source_photoz_bias IA pk_to_cl_gg pk_to_cl add_magnification add_intrinsic add_eb shear_2pt_eplusb shear_2pt_eminusb choose_xip  2pt_gal 2pt_gal_shear shear_m_bias %(ACTION)s
+quiet = T
+timing = F
+debug = F
+priors = %(RUN_NAME)s/priors.ini
+values = %(RUN_NAME)s/values.ini
+extra_output = cosmological_parameters/sigma_8 cosmological_parameters/sigma_12
+fast_slow = F
+first_fast_module = shear_m_bias
+
+[bin_bias]
+file = cosmosis-standard-library/bias/binwise_bias/bin_bias.py
+perbin = T
+
+[consistency]
+file = cosmosis-standard-library/utility/consistency/consistency_interface.py
+
+[camb]
+file = cosmosis-standard-library/boltzmann/camb/camb.so
+mode = all
+lmax = 2500
+feedback = 0
+kmin = 1e-5
+kmax = 10.0
+nk = 400
+
+[halofit]
+file = cosmosis-standard-library/boltzmann/halofit_takahashi/halofit_interface.so
+nk = 700
+
+[extrapolate]
+file = cosmosis-standard-library/boltzmann/extrapolate/extrapolate_power.py
+kmax = 500.
+
+[fits_nz]
+file = cosmosis-standard-library/number_density/load_nz_fits/load_nz_fits.py
+nz_file = %(2PT_FILE)s
+data_sets = lens source
+prefix_section = T
+prefix_extension = T
+
+[lens_photoz_bias]
+file = cosmosis-standard-library/number_density/photoz_bias/photoz_bias.py
+mode = additive
+sample = nz_lens
+bias_section = lens_photoz_errors
+interpolation = linear
+
+[source_photoz_bias]
+file = cosmosis-standard-library/number_density/photoz_bias/photoz_bias.py
+mode = additive
+sample = nz_source
+bias_section = wl_photoz_errors
+interpolation = linear
+
+[IA_old]
+file = cosmosis-standard-library/intrinsic_alignments/la_model/linear_alignments_interface.py
+method = bk_corrected
+do_galaxy_intrinsic = T
+
+[IA]
+file = /home/alonso/cosmosis/cosmosis-des-library/IAs/tatt/tatt_interface.py
+mode = all
+sub_lowk = F
+sub_const = F
+include_s2_terms = F
+do_galaxy_intrinsic = F
+ia_model = tatt
+asigma8 = F
+
+[ia_z_field]
+file = /home/alonso/cosmosis/cosmosis-standard-library/intrinsic_alignments/z_powerlaw/ia_z_powerlaw.py
+do_galaxy_intrinsic = T
+
+[pk_to_cl]
+file = cosmosis-standard-library/structure/projection/project_2d.py
+ell_min_logspaced = 0.1
+ell_max_logspaced = 5.0e5
+n_ell_logspaced = 100
+shear-shear = source-source
+shear-intrinsic = source-source
+intrinsic-intrinsic = source-source
+intrinsicb-intrinsicb = source-source
+lingal-shear = lens-source
+lingal-intrinsic = lens-source
+lingal-magnification = lens-lens
+magnification-shear = lens-source
+magnification-magnification = lens-lens
+magnification-intrinsic = lens-source
+verbose = F
+get_kernel_peaks = F
+sig_over_dchi = 20.
+shear_kernel_dchi = 10.
+
+[pk_to_cl_gg]
+file = cosmosis-standard-library/structure/projection/project_2d.py
+lingal-lingal = lens-lens
+do_exact = lingal-lingal
+do_rsd = True
+ell_min_linspaced = 1
+ell_max_linspaced = 4
+n_ell_linspaced = 5
+ell_min_logspaced = 5.
+ell_max_logspaced = 1.e5
+n_ell_logspaced = 80
+limber_ell_start = 200
+auto_only = lingal-lingal
+sig_over_dchi_exact = 3.5
+
+[add_magnification]
+file = cosmosis-standard-library/structure/projection/add_magnification.py
+include_intrinsic = T
+
+[add_intrinsic]
+file = cosmosis-standard-library/shear/add_intrinsic/add_intrinsic.py
+shear-shear = T
+position-shear = T
+perbin = F
+
+[add_eb]
+file = cosmosis-des-library/IAs/add_bmode_cl/add_bmode_cl.py
+
+[choose_xip]
+file = cosmosis-standard-library/utility/tools/copy_section.py
+source = shear_xi_eplusb_plus   shear_xi_eminusb_minus
+dest = shear_xi_plus          shear_xi_minus
+
+[fast_pt]
+file = /home/alonso/cosmosis/cosmosis-des-library/tcp/fast_pt/fast_pt_interface.py
+do_ia = T
+k_res_fac = 0.5
+verbose = F
+
+[shear_m_bias]
+file = cosmosis-standard-library/shear/shear_bias/shear_m_bias.py
+m_per_bin = True
+cl_section = shear_xi_plus shear_xi_minus
+cross_section = galaxy_shear_xi
+verbose = F
+
+[shear_2pt_eplusb]
+file = cosmosis-standard-library/shear/cl_to_xi_fullsky/cl_to_xi_interface.py
+ell_max = 40000
+xi_type = '22'
+theta_file = %(2PT_FILE)s
+bin_avg = T
+input_section_name = shear_cl_eplusb
+output_section_name = shear_xi_eplusb
+
+[shear_2pt_eminusb]
+file = cosmosis-standard-library/shear/cl_to_xi_fullsky/cl_to_xi_interface.py
+ell_max = 40000
+xi_type = '22'
+theta_file = %(2PT_FILE)s
+bin_avg = T
+input_section_name = shear_cl_eminusb
+output_section_name = shear_xi_eminusb
+
+[2pt_gal]
+file = cosmosis-standard-library/shear/cl_to_xi_fullsky/cl_to_xi_interface.py
+ell_max = 40000
+xi_type = '00'
+theta_file = %(2PT_FILE)s
+bin_avg = T
+
+[2pt_gal_shear]
+file = cosmosis-standard-library/shear/cl_to_xi_fullsky/cl_to_xi_interface.py
+ell_max = 40000
+xi_type = '02'
+theta_file = %(2PT_FILE)s
+bin_avg = T
+
+[2pt_like]
+file = cosmosis-standard-library/likelihood/2pt/2pt_like_allmarg.py
+do_pm_marg = True
+data_file = %(2PT_FILE)s
+data_sets = %(2PT_DATA_SETS)s
+make_covariance = F
+covmat_name = COVMAT
+angle_range_xip_1_1 = 7.195005 250.0
+angle_range_xip_1_2 = 7.195005 250.0
+angle_range_xip_1_3 = 5.715196 250.0
+angle_range_xip_1_4 = 5.715196 250.0
+angle_range_xip_2_1 = 7.195005 250.0
+angle_range_xip_2_2 = 4.539741 250.0
+angle_range_xip_2_3 = 4.539741 250.0
+angle_range_xip_2_4 = 4.539741 250.0
+angle_range_xip_3_1 = 5.715196 250.0
+angle_range_xip_3_2 = 4.539741 250.0
+angle_range_xip_3_3 = 3.606045 250.0
+angle_range_xip_3_4 = 3.606045 250.0
+angle_range_xip_4_1 = 5.715196 250.0
+angle_range_xip_4_2 = 4.539741 250.0
+angle_range_xip_4_3 = 3.606045 250.0
+angle_range_xip_4_4 = 3.606045 250.0
+angle_range_xim_1_1 = 90.579750 250.0
+angle_range_xim_1_2 = 71.950053 250.0
+angle_range_xim_1_3 = 71.950053 250.0
+angle_range_xim_1_4 = 71.950053 250.0
+angle_range_xim_2_1 = 71.950053 250.0
+angle_range_xim_2_2 = 57.151958 250.0
+angle_range_xim_2_3 = 57.151958 250.0
+angle_range_xim_2_4 = 45.397414 250.0
+angle_range_xim_3_1 = 71.950053 250.0
+angle_range_xim_3_2 = 57.151958 250.0
+angle_range_xim_3_3 = 45.397414 250.0
+angle_range_xim_3_4 = 45.397414 250.0
+angle_range_xim_4_1 = 71.950053 250.0
+angle_range_xim_4_2 = 45.397414 250.0
+angle_range_xim_4_3 = 45.397414 250.0
+angle_range_xim_4_4 = 36.060448 250.0
+angle_range_gammat_1_1 = 64.0 250.0
+angle_range_gammat_1_2 = 64.0 250.0
+angle_range_gammat_1_3 = 64.0 250.0
+angle_range_gammat_1_4 = 64.0 250.0
+angle_range_gammat_2_1 = 40.0 250.0
+angle_range_gammat_2_2 = 40.0 250.0
+angle_range_gammat_2_3 = 40.0 250.0
+angle_range_gammat_2_4 = 40.0 250.0
+angle_range_gammat_3_1 = 30.0 250.0
+angle_range_gammat_3_2 = 30.0 250.0
+angle_range_gammat_3_3 = 30.0 250.0
+angle_range_gammat_3_4 = 30.0 250.0
+angle_range_gammat_4_1 = 24.0 250.0
+angle_range_gammat_4_2 = 24.0 250.0
+angle_range_gammat_4_3 = 24.0 250.0
+angle_range_gammat_4_4 = 24.0 250.0
+angle_range_gammat_5_1 = 21.0 250.0
+angle_range_gammat_5_2 = 21.0 250.0
+angle_range_gammat_5_3 = 21.0 250.0
+angle_range_gammat_5_4 = 21.0 250.0
+angle_range_wtheta_1_1 = 43.0 250.0
+angle_range_wtheta_2_2 = 27.0 250.0
+angle_range_wtheta_3_3 = 20.0 250.0
+angle_range_wtheta_4_4 = 16.0 250.0
+angle_range_wtheta_5_5 = 14.0 250.0
+
+[save_2pt]
+file = cosmosis-standard-library/likelihood/2pt/save_2pt.py
+theta_min = 2.5
+theta_max = 250.0
+n_theta = 20
+real_space = T
+make_covariance = F
+shear_nz_name = nz_source
+position_nz_name = nz_lens
+filename = data_vectors/sim_%(RUN_NAME)s.fits
+overwrite = T
+auto_only = galaxy_xi
+spectrum_sections = shear_xi_plus shear_xi_minus galaxy_shear_xi galaxy_xi
+output_extensions = xip xim gammat wtheta
+two_thirds_midpoint = T
+copy_covariance = data_vectors/successful_sim_fiducial.fits
+
+[sim_fits_nz_lens]
+file = cosmosis-standard-library/number_density/load_nz_fits/load_nz_fits.py
+nz_file = nz_inputs/nz_y3_redmagic_v6.4.22_v2_gold_2.2.1_combined_max_bin_edges.fits
+data_sets = lens
+prefix_section = T
+prefix_extension = T
+
+[sim_fits_nz_source]
+file = cosmosis-standard-library/number_density/load_nz_fits/load_nz_fits.py
+nz_file = nz_inputs/barcelona_lens1.fits
+data_sets = source
+prefix_section = T
+prefix_extension = T
+
+[grid]
+nsample_dimension = 1
+
+END_OF_PARAMS_INI
+START_OF_VALUES_INI
+[cosmological_parameters]
+omega_m = 0.1	0.3	0.9
+h0 = 0.55	0.69	0.91
+omega_b = 0.03	0.048	0.12
+n_s = 0.87	0.97	1.07
+a_s = 0.5e-09	 2.19e-9  5.0e-09
+omnuh2 = 0.0
+massive_nu = 0
+massless_nu = 3.046
+omega_k = 0.0
+tau = 0.0697186
+yhe = 0.245341
+w = -1.0
+wa = 0.0
+
+[shear_calibration_parameters]
+m1 = -0.1  0.0  0.1
+m2 = -0.1  0.0  0.1
+m3 = -0.1  0.0  0.1
+m4 = -0.1  0.0  0.1
+
+[wl_photoz_errors]
+bias_1 = 0.0
+bias_2 = 0.0
+bias_3 = 0.0
+bias_4 = 0.0
+
+[lens_photoz_errors]
+bias_1 = -0.05  0.0  0.05
+bias_2 = -0.05  0.0  0.05
+bias_3 = -0.05  0.0  0.05
+bias_4 = -0.05  0.0  0.05
+bias_5 = -0.05  0.0  0.05
+
+[bias_lens]
+b1 = 0.8  1.7   3.0
+b2 = 0.8  1.7   3.0
+b3 = 0.8  1.7   3.0
+b4 = 0.8  2.0    3.0
+b5 = 0.8  2.0    3.0
+
+[mag_alpha_lens]
+alpha_1 = 0.903125
+alpha_2 = 0.68572965
+alpha_3 = 0.65340057
+alpha_4 = 1.58867862
+alpha_5 = 1.93754879
+
+[intrinsic_alignment_parameters]
+z_piv = 0.62
+a1 = -5.0  0.7  5.0
+a2 = -5.0  -1.36  5.0
+alpha1 = -5.0  -1.7  5.0
+alpha2 = -5.0  -2.5  5.0
+bias_ta = 0.0  1.0  2.0
+
+END_OF_VALUES_INI
+START_OF_PRIORS_INI
+[lens_photoz_errors]
+bias_1 = gaussian 0.0 0.004
+bias_2 = gaussian 0.0 0.003
+bias_3 = gaussian 0.0 0.003
+bias_4 = gaussian 0.0 0.004
+bias_5 = gaussian 0.0 0.009
+
+[shear_calibration_parameters]
+m1 = gaussian 0.0 0.005
+m2 = gaussian 0.0 0.005
+m3 = gaussian 0.0 0.005
+m4 = gaussian 0.0 0.005
+
+[planck]
+a_planck = gaussian 1.0 0.0025
+
+END_OF_PRIORS_INI
+START_OF_STDOUT
+$ DEMODEL=lcdm DATAFILE=successful_sim_fiducial.fits SCALE_CUTS=scales_3x2pt_Y1.ini cosmosis fiducial/simulate.ini
+
+Reading included ini file: `fiducial/params.ini'
+Reading included ini file: `params.ini'
+Reading included ini file: `scale_cuts/scales_3x2pt_Y1.ini'
+Reading included ini file: `values.ini'
+Reading included ini file: `de_models/lcdm.ini'
+Reading included ini file: `priors.ini'
+
+Parameter Priors
+----------------
+cosmological_parameters--omega_m         ~ U(0.1, 0.9)
+cosmological_parameters--h0              ~ U(0.55, 0.91)
+cosmological_parameters--omega_b         ~ U(0.03, 0.12)
+cosmological_parameters--n_s             ~ U(0.87, 1.07)
+cosmological_parameters--a_s             ~ U(5e-10, 5e-09)
+cosmological_parameters--omnuh2          ~ delta(0.0)
+cosmological_parameters--massive_nu      ~ delta(0)
+cosmological_parameters--massless_nu     ~ delta(3.046)
+cosmological_parameters--omega_k         ~ delta(0.0)
+cosmological_parameters--tau             ~ delta(0.0697186)
+cosmological_parameters--yhe             ~ delta(0.245341)
+cosmological_parameters--w               ~ delta(-1.0)
+cosmological_parameters--wa              ~ delta(0.0)
+shear_calibration_parameters--m1         ~ N(0.0, 0.005 ** 2)   [-0.1 < x < 0.1]
+shear_calibration_parameters--m2         ~ N(0.0, 0.005 ** 2)   [-0.1 < x < 0.1]
+shear_calibration_parameters--m3         ~ N(0.0, 0.005 ** 2)   [-0.1 < x < 0.1]
+shear_calibration_parameters--m4         ~ N(0.0, 0.005 ** 2)   [-0.1 < x < 0.1]
+wl_photoz_errors--bias_1                 ~ delta(0.0)
+wl_photoz_errors--bias_2                 ~ delta(0.0)
+wl_photoz_errors--bias_3                 ~ delta(0.0)
+wl_photoz_errors--bias_4                 ~ delta(0.0)
+lens_photoz_errors--bias_1               ~ N(0.0, 0.004 ** 2)   [-0.05 < x < 0.05]
+lens_photoz_errors--bias_2               ~ N(0.0, 0.003 ** 2)   [-0.05 < x < 0.05]
+lens_photoz_errors--bias_3               ~ N(0.0, 0.003 ** 2)   [-0.05 < x < 0.05]
+lens_photoz_errors--bias_4               ~ N(0.0, 0.004 ** 2)   [-0.05 < x < 0.05]
+lens_photoz_errors--bias_5               ~ N(0.0, 0.009 ** 2)   [-0.05 < x < 0.05]
+bias_lens--b1                            ~ U(0.8, 3.0)
+bias_lens--b2                            ~ U(0.8, 3.0)
+bias_lens--b3                            ~ U(0.8, 3.0)
+bias_lens--b4                            ~ U(0.8, 3.0)
+bias_lens--b5                            ~ U(0.8, 3.0)
+mag_alpha_lens--alpha_1                  ~ delta(0.903125)
+mag_alpha_lens--alpha_2                  ~ delta(0.68572965)
+mag_alpha_lens--alpha_3                  ~ delta(0.65340057)
+mag_alpha_lens--alpha_4                  ~ delta(1.58867862)
+mag_alpha_lens--alpha_5                  ~ delta(1.93754879)
+intrinsic_alignment_parameters--z_piv    ~ delta(0.62)
+intrinsic_alignment_parameters--a1       ~ U(-5.0, 5.0)
+intrinsic_alignment_parameters--a2       ~ U(-5.0, 5.0)
+intrinsic_alignment_parameters--alpha1   ~ U(-5.0, 5.0)
+intrinsic_alignment_parameters--alpha2   ~ U(-5.0, 5.0)
+intrinsic_alignment_parameters--bias_ta  ~ U(0.0, 2.0)
+
+
+
+
+
+Loading number density data from data_vectors/successful_sim_fiducial.fits:
+    Looking at FITS extension NZ_LENS:
+        Found 5 bins
+    Looking at FITS extension NZ_SOURCE:
+        Found 4 bins
+
+
+You have asked for quantities from FAST-PT. FAST-PT will be run.
+
+
+
+doing exact for option_name lingal-lingal
+Calculating Limber: Kernel 1 = ('N', u'lens'), Kernel 2 = ('N', u'lens'), P_3D = <class 'project_2d.MatterPower3D'>, --> Output: galaxy_cl
+Will project these spectra into 2D:
+('    - ', 'galaxy_cl')
+Doing exact calculation for 33 ells
+between 1 and 189
+
+Calculating Limber: Kernel 1 = ('W', u'source'), Kernel 2 = ('W', u'source'), P_3D = <class 'project_2d.MatterPower3D'>, --> Output: shear_cl
+Calculating Limber: Kernel 1 = ('W', u'source'), Kernel 2 = ('N', u'source'), P_3D = <class 'project_2d.MatterIntrinsicPower3D'>, --> Output: shear_cl_gi
+Calculating Limber: Kernel 1 = ('N', u'lens'), Kernel 2 = ('W', u'source'), P_3D = <class 'project_2d.MatterPower3D'>, --> Output: galaxy_shear_cl
+Calculating Limber: Kernel 1 = ('N', u'lens'), Kernel 2 = ('W', u'lens'), P_3D = <class 'project_2d.MatterPower3D'>, --> Output: galaxy_magnification_cl
+Calculating Limber: Kernel 1 = ('N', u'lens'), Kernel 2 = ('N', u'source'), P_3D = <class 'project_2d.MatterIntrinsicPower3D'>, --> Output: galaxy_intrinsic_cl
+Calculating Limber: Kernel 1 = ('N', u'source'), Kernel 2 = ('N', u'source'), P_3D = <class 'project_2d.IntrinsicPower3D'>, --> Output: shear_cl_ii
+Calculating Limber: Kernel 1 = ('N', u'source'), Kernel 2 = ('N', u'source'), P_3D = <class 'project_2d.IntrinsicBBPower3D'>, --> Output: shear_cl_bb
+Calculating Limber: Kernel 1 = ('W', u'lens'), Kernel 2 = ('W', u'lens'), P_3D = <class 'project_2d.MatterPower3D'>, --> Output: magnification_cl
+Calculating Limber: Kernel 1 = ('W', u'lens'), Kernel 2 = ('N', u'source'), P_3D = <class 'project_2d.MatterIntrinsicPower3D'>, --> Output: magnification_intrinsic_cl
+Calculating Limber: Kernel 1 = ('W', u'lens'), Kernel 2 = ('W', u'source'), P_3D = <class 'project_2d.MatterPower3D'>, --> Output: magnification_shear_cl
+Will project these spectra into 2D:
+('    - ', 'shear_cl')
+('    - ', 'shear_cl_gi')
+('    - ', 'galaxy_shear_cl')
+('    - ', 'galaxy_magnification_cl')
+('    - ', 'galaxy_intrinsic_cl')
+('    - ', 'shear_cl_ii')
+('    - ', 'shear_cl_bb')
+('    - ', 'magnification_cl')
+('    - ', 'magnification_intrinsic_cl')
+('    - ', 'magnification_shear_cl')
+
+
+The add_magnification module will try to combine magnification terms into
+both the galaxy-galaxy and galaxy-shear spectra.
+
+
+
+The add_intrinsic module will try to combine IA terms into these spectra:
+ - shear-shear.
+ - position-shear.
+
+
+
+*** Reading in theta values from data file data_vectors/successful_sim_fiducial.fits ***
+*** Using bin averaged Legendre coefficients ***
+/home/alonso/cosmosis/cosmosis-standard-library/shear/cl_to_xi_fullsky/cl_to_xi_interface.py:23: UserWarning: Note: we are assuming that the theta values for all bin pairs are the same. If this is not true, you need to modify cl_to_xi_interface
+  warnings.warn("Note: we are assuming that the theta values for all bin pairs are the same. "
+Converting angle units of xip from arcmin -> rad (factor 0.000290888208666)
+Converting angle units of xip from arcmin -> rad (factor 0.000290888208666)
+Computing coefficients to transform shear_cl_eplusb -> (u'shear_xi_eplusb_plus', u'shear_xi_eplusb_minus')
+getting bin averaged leg factors for 22
+
+*** Reading in theta values from data file data_vectors/successful_sim_fiducial.fits ***
+*** Using bin averaged Legendre coefficients ***
+Converting angle units of xip from arcmin -> rad (factor 0.000290888208666)
+Converting angle units of xip from arcmin -> rad (factor 0.000290888208666)
+Computing coefficients to transform shear_cl_eminusb -> (u'shear_xi_eminusb_plus', u'shear_xi_eminusb_minus')
+getting bin averaged leg factors for 22
+
+Will copy section shear_xi_eplusb_plus -> shear_xi_plus
+Will copy section shear_xi_eminusb_minus -> shear_xi_minus
+
+*** Reading in theta values from data file data_vectors/successful_sim_fiducial.fits ***
+*** Using bin averaged Legendre coefficients ***
+Converting angle units of wtheta from arcmin -> rad (factor 0.000290888208666)
+Converting angle units of wtheta from arcmin -> rad (factor 0.000290888208666)
+Computing coefficients to transform galaxy_cl -> galaxy_xi
+getting bin averaged leg factors for 00
+
+*** Reading in theta values from data file data_vectors/successful_sim_fiducial.fits ***
+*** Using bin averaged Legendre coefficients ***
+Converting angle units of gammat from arcmin -> rad (factor 0.000290888208666)
+Converting angle units of gammat from arcmin -> rad (factor 0.000290888208666)
+Computing coefficients to transform galaxy_shear_cl -> galaxy_shear_xi
+getting bin averaged leg factors for 02
+
+
+The shear_m_bias module will use calibration values from shear_calibration_parameters and look for 
+shear-shear spectra in [u'shear_xi_plus', u'shear_xi_minus'] and position-shear in [u'galaxy_shear_xi']
+Currently this module will always use the same set of m values for each section
+
+found output_extensions
+No angle_units provided, assuming arcminutes
+Saving at these theta values (in arcmin):
+[  2.83602296   3.57034138   4.49479349   5.65860974   7.1237676
+   8.96829206  11.29041078  14.21378504  17.89409518  22.52733114
+  28.36022963  35.70341377  44.94793488  56.58609743  71.23767601
+  89.68292061 112.90410776 142.13785035 178.94095179 225.27331141]
+
+****************************
+* Running sampler 1/1: test
+****************************
+/home/alonso/cosmosis/cosmosis-standard-library/structure/projection/kernel.py:30: UserWarning: Some of your n(z) or other kernels are negative.
+  warnings.warn("Some of your n(z) or other kernels are negative.")
+/home/alonso/cosmosis/cosmosis-standard-library/shear/cl_to_xi_fullsky/cl_to_xi.py:36: RuntimeWarning: divide by zero encountered in log
+  spec = np.exp(self.interp_func(np.log(angle)))
+/home/alonso/cosmosis/cosmosis-standard-library/shear/cl_to_xi_fullsky/cl_to_xi.py:41: RuntimeWarning: divide by zero encountered in log
+  spec = self.interp_func(np.log(angle))
+Saving two-point data to data_vectors/sim_fiducial.fits
+Generating twopoint file with the following spectra:
+     [u'shear_xi_plus', u'shear_xi_minus', u'galaxy_shear_xi', u'galaxy_xi']
+(No likelihoods required in ini file)
+
+END_OF_STDOUT
