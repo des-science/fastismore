@@ -76,7 +76,7 @@ def get_default_cc():
 		label_font_size=20, tick_font_size=20, legend_color_text=True)
 
 def plot_cc(cc, params2plot):
-	fig = cc.plotter.plot(parameters=params2plot)
+	fig = cc.plotter.plot(parameters=param_to_label(params2plot))
 	fig.set_size_inches(4.5 + fig.get_size_inches())
 	return fig
 
@@ -144,26 +144,10 @@ class ImportanceChain(Chain):
 		"""compute effective sample size and weighted average,rms of loglikelihood difference.
 		returns (eff_nsample, mean_dloglike, rms_dloglike)"""
 
-		assert self.data
+		return *self.get_dloglike_stats(), self.get_ESS(), self.dist_from_baseline()
 
-		log_importance_weights = self.data['new_like'] - self.data['old_like']
-		importance_weights = np.exp(log_importance_weights, dtype=np.float128)
-
-		if(np.max(importance_weights) >= 1e158):
-			pass
-
-		mean_dloglike = np.average(log_importance_weights,    weights=self.data['old_weight'])
-		rms_dloglike  = np.average(log_importance_weights**2, weights=self.data['old_weight'])**0.5
-
-		mean_importance_weights_squared = np.average(importance_weights,    weights=self.data['old_weight'])**2
-		rms_importance_weights_squared  = np.average(importance_weights**2, weights=self.data['old_weight'])
-
-		eff_nsample_frac = mean_importance_weights_squared / rms_importance_weights_squared
-
-		nsample = len(importance_weights)
-		eff_nsample = nsample * eff_nsample_frac
-
-		return eff_nsample, mean_dloglike, rms_dloglike
+	def get_bias_in_param(self, param):
+		self.get_summary
 
 	def get_dloglike_stats(self):
 		"""compute weighted average and rms of loglikelihood difference. Should be <~ O(1).
@@ -258,8 +242,17 @@ class ImportanceChain(Chain):
 		""" returns the mean parameter values"""
 		self.__build_cc()
 
-		summary = self.cc.analysis.get_summary(squeeze=False)
-		return summary[1]
+		return self.cc.analysis.get_summary(squeeze=False)[1]
+		
+
+	def get_summary(self, params):
+		""" returns the mean parameter values"""
+		self.__build_cc()
+
+		labels = param_to_label(params)
+
+		summary = self.cc.analysis.get_summary(squeeze=False)[1]
+		return {key: summary[key] for key in summary.keys() if key in labels}
 
 def main():
 	parser = argparse.ArgumentParser(description = '')
@@ -323,6 +316,8 @@ def main():
 			is_chain.add_to_cc(cc)
 
 		plot_cc(cc).savefig(args.output + '_triangle.' + args.fig_format)
+
+		print(cc.analysis.get_summary(squeeze=False))
 
 	if args.stats:
 		for is_chain in is_chains:
