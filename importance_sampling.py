@@ -5,25 +5,6 @@
 # description: This code computes importance weights for a data vector given a
 # chain with data_vector--2pt_theory_### columns
 # 
-# usage: importance_sampling.py [-h] [--like_section LIKE_SECTION]
-#                               [--include_norm] [--datasets DATA_SETS]
-#                               chain data_vector output
-# 
-# positional arguments:
-#   chain                 Base chain filename.
-#   data_vector           Data vector filename.
-#   output                Output importance sampling weights.
-#
-# optional arguments:
-#   -h, --help            show this help message and exit
-#   --like_section LIKE_SECTION
-#                         The 2pt_like section name used in cosmosis. Needed in
-#                         order to get scale cuts (default: 2pt_like).
-#   --include_norm        Include normalization |C| in the likelihood
-#                         (recommended if you are varying the covariance
-#                         matrix).
-#   --datasets DATA_SETS  Data set names used in the data vector file (default:
-#                         xip,xim,gammat,wtheta).
 # output: output.txt: -1/2*chi2 (log-likelihood) and weight for each point in chain.txt
 #
 
@@ -104,13 +85,6 @@ class Params():
         """defaults any unspecified methods to the ConfigParser object"""
         return getattr(self.parser, attr)
 
-def load_labels(filename):
-    """ Reads labels from first line in given file"""
-    with open(filename) as f:
-        labels = np.array(f.readline()[1:-1].lower().split())
-    
-    return labels
-
 def main():
     # First, let's handle input arguments
     parser = argparse.ArgumentParser(description = 'This code computes importance weights for a data vector given a chain with data_vector--2pt_theory_### columns')
@@ -121,23 +95,22 @@ def main():
 
     parser.add_argument('--like_section', dest = 'like_section',
                            default = '2pt_like', required = False,
-                           help = 'The 2pt_like section name used in cosmosis. Needed in order to get scale cuts (default: 2pt_like).')
+                           help = 'The 2pt_like section name used in the baseline chain. (default: 2pt_like).')
+
+    # SJ begin
+    parser.add_argument('--like_column', dest = 'like_column',
+                           default = 'like', required = False,
+                           help ='Likelihood column name in the baseline chain. (LIKELIHOODS--2PT_LIKE if chain was run with external data sets)')
+    # SJ end
 
     parser.add_argument('--include_norm', dest = 'include_norm', action='store_true',
-                           help = 'Include normalization |C| in the likelihood (recommended if you are varying the covariance matrix).')
-
-    parser.add_argument('--datasets', dest = 'data_sets',
-                           default = 'xip,xim,gammat,wtheta', required = False,
-                           help = 'Data set names used in the data vector file (default: xip,xim,gammat,wtheta).')
-    # SJ begin
-    parser.add_argument('--like2pt', dest = 'name_2ptlike',
-                           default = 'like', required = False,
-                           help ='LIKELIHOODS--2PT_LIKE if chain was run with external data sets')
-    # SJ end
+                           help = 'Include normalization detC in the likelihood.')
 
     args = parser.parse_args()
 
-    labels = load_labels(args.chain)
+    # Load labels from chain file
+    with open(args.chain) as f:
+        labels = np.array(f.readline()[1:-1].lower().split())
 
     # Loads params from chain file header
     params = Params(args.chain, args.like_section)
@@ -155,16 +128,14 @@ def main():
     if args.include_norm:
         sign, log_det = np.linalg.slogdet(data_vector.covmat)
 
-
-
     # SJ begin
-    like_i   = np.where(labels == args.name_2ptlike)[0]  if args.name_2ptlike in labels else -1
+    like_i   = np.where(labels == args.like_column)[0]  if args.like_column in labels else -1
     # SJ end
     weight_i = np.where(labels == 'weight')[0] if 'weight' in labels else -1
     theory_i = np.array(['data_vector--2pt_theory_' in l for l in labels])
 
     if like_i == -1:
-        raise Exception("Likelihood column {} not found.".format(args.name_2ptlike))
+        raise Exception("Likelihood column {} not found.".format(args.like_column))
     else:
         pass
 
@@ -189,7 +160,7 @@ def main():
             output.write('# Importance sampling weights\r\n')
             output.write('# Chain: {}\r\n'.format(args.chain))
             output.write('# Data vector: {}\r\n'.format(args.data_vector))
-            output.write('# Data vector size: {}\r\n'.format(np.sum(theory_i)))
+            output.write('# Data vector size (from base chain): {}\r\n'.format(np.sum(theory_i)))
 
             if args.include_norm:
                 output.write('# Including detC factor in likelihood\r\n')
@@ -202,6 +173,7 @@ def main():
             
             loglikediff = []
             oldweights = []
+            weights = []
             
             # Iterate through lines to compute IS weights (can probably rewrite this as array funcs but not necessary)
             for line in f:
@@ -214,7 +186,7 @@ def main():
                 if args.include_norm:
                     new_like += -0.5*log_det
 
-                log_is_weight = new_like - old_like(vec) 
+                log_is_weight = new_like - old_like(vec)
                 loglikediff.append(log_is_weight)
                 
                 ## Try to get ratio of likelihoods. If old likelihood is tiny, then we could be dividing two tiny numbers.
@@ -245,13 +217,16 @@ def main():
                     weight = likeratio * w_old #new weight
                     norm_fact += 1
                     total_is -= log_is_weight
+
                 oldweights.append(w_old)
+                weights.append(weight)
 
                 output.write('%e\t%e\t%e\t%e\r\n' % (old_like(vec), w_old, new_like, weight))
 
             output.write('# <log_weight> = %f\r\n' % (total_is/norm_fact))
 
             oldweights = np.array(oldweights)
+            weights = np.array(weights)
             loglikediff = np.array(loglikediff)
             Nsample = len(loglikediff)
             
@@ -263,15 +238,24 @@ def main():
             normed_weights = weight_ratio / (Nsample * np.average(weight_ratio, weights=oldweights)) #really doing weighted sum
             eff_sample_frac = 1./(Nsample * np.average(normed_weights**2, weights=oldweights))
 
-            
-            #TODO: ESS using e^loglikediff and normalized correctly.
-            print('Weighted average difference of logposterior: ', -loglikediff_mean) #this should match total_is/normfact
-            print('Check: same result, using individual calculation: ', total_is/norm_fact)
-            print('Weighted RMS difference of logposterior: ', loglikediff_rms)
-            print('Baseline Sample Size     = {}'.format(Nsample))
+            final_ess = weights.sum()**2/(weights**2).sum()
 
-            output.write('# RMS(log_weight) = %f\r\n' % (loglikediff_rms))
-    #        output.write('# Effective sample size = %f\r\n' % (Nsample_eff_IS/Nsample))
+            #TODO: ESS using e^loglikediff and normalized correctly.
+            print()
+            print('Weighted average difference of logposterior: {}'.format(-loglikediff_mean)) #this should match total_is/normfact
+            print('Check: same result, using individual calculation: {}'.format(total_is/norm_fact))
+            print('Weighted RMS difference of logposterior: {}'.format(loglikediff_rms))
+
+            print('Baseline Sample Size = {}'.format(Nsample))
+            print('Baseline ESS (assuming uncorrelated samples) = {}'.format(oldweights.sum()**2/(oldweights**2).sum()))
+
+            print('RMS(log_weight) = {}'.format(loglikediff_rms))
+            print('Importance sampling ESS = {}'.format(eff_sample_frac))
+            print('Final ESS = {}'.format(final_ess))
+
+            output.write('# RMS(log_weight) = {}\r\n'.format(loglikediff_rms))
+            output.write('# Importance sampling ESS = {}\r\n'.format(eff_sample_frac))
+            output.write('# Final ESS = {}'.format(final_ess))
 
 if __name__ == '__main__':
     main()
