@@ -210,7 +210,24 @@ class ImportanceChain(Chain):
 		rmsdloglike = np.average((self.data['new_like'] - self.data['old_like'])**2, weights=self.data['old_weight'])**0.5
 	
 		return dloglike, rmsdloglike
-	
+    
+	def get_ESS_NW(self, weight_by_multiplicity=True):
+	    """compute and return effective sample size of IS chain. 
+	    If IS chain is identical to baseline, then just equals full sample size.
+	    Insensitive to multiplicative scaling, i.e. if IS chain shows all points exactly half as likely, will not show up in ESS,
+	    so use mean_dloglike stat for that.
+	    (see e.g. https://arxiv.org/pdf/1602.03572.pdf or 
+	    http://www.nowozin.net/sebastian/blog/effective-sample-size-in-importance-sampling.html)"""
+	    #want stats on change to weights, but noisier if compute from new_weight/old_weight, so use e^dloglike directly.
+	    weight_ratio = np.exp(self.data['new_like'] - self.data['old_like'])
+	    Nsamples = len(weight_ratio)
+	    if weight_by_multiplicity: 
+	        mult = self.data['old_weight']
+	    else:
+	        mult = np.ones_like(weight_ratio)
+	    normed_weights = weight_ratio / (np.average(weight_ratio, weights=mult)) #pulled out factor of Nsamples
+	    return Nsamples * 1./(np.average(normed_weights**2, weights=mult))
+
 	def get_ESS(self, weight_by_multiplicity=True):
 		"""compute and return effective sample size."""
 		# return self.get_MCSamples().getEffectiveSamples()
