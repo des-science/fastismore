@@ -14,7 +14,8 @@ import sys, os
 
 # Imports 2pt_like module
 sys.path.append(os.environ['COSMOSIS_SRC_DIR'] + '/cosmosis-standard-library/likelihood/2pt')
-twopointlike = __import__('2pt_like_allmarg')
+# twopointlike = __import__('2pt_like_allmarg')
+twopointlike = __import__('2pt_like')
 
 class Params():
     """This just mimicks the SectionOption class used by cosmosis to read values from params.ini"""
@@ -93,17 +94,17 @@ def main():
     parser.add_argument('data_vector', help = 'Data vector filename.')
     parser.add_argument('output', help = 'Output importance sampling weights.')
 
-    parser.add_argument('--like_section', dest = 'like_section',
+    parser.add_argument('--like-section', dest = 'like_section',
                            default = '2pt_like', required = False,
                            help = 'The 2pt_like section name used in the baseline chain. (default: 2pt_like).')
 
     # SJ begin
-    parser.add_argument('--like_column', dest = 'like_column',
+    parser.add_argument('--like-column', dest = 'like_column',
                            default = 'like', required = False,
                            help ='Likelihood column name in the baseline chain. (LIKELIHOODS--2PT_LIKE if chain was run with external data sets)')
     # SJ end
 
-    parser.add_argument('--include_norm', dest = 'include_norm', action='store_true',
+    parser.add_argument('--include-norm', dest = 'include_norm', action='store_true',
                            help = 'Include normalization detC in the likelihood.')
 
     args = parser.parse_args()
@@ -119,14 +120,16 @@ def main():
     params.set(args.like_section, 'data_file', args.data_vector)
 
     # Loads the likelihood object building the data vector and covariance
-    like_obj = twopointlike.TwoPointGammatMargLikelihood(params)
+    # like_obj = twopointlike.TwoPointGammatMargLikelihood(params)
+    like_obj = twopointlike.TwoPointLikelihood(params)
 
     # Gets data vector and inverse covariance from likelihood object
     data_vector = np.atleast_1d(like_obj.data_y)
     precision_matrix = like_obj.inv_cov
+    covariance_matrix = like_obj.cov
 
     if args.include_norm:
-        sign, log_det = np.linalg.slogdet(data_vector.covmat)
+        sign, log_det = np.linalg.slogdet(covariance_matrix)
 
     # SJ begin
     like_i   = np.where(labels == args.like_column)[0]  if args.like_column in labels else -1
