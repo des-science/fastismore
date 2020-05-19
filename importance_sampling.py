@@ -14,7 +14,7 @@ import sys, os
 
 # Imports 2pt_like module
 sys.path.append(os.environ['COSMOSIS_SRC_DIR'] + '/cosmosis-standard-library/likelihood/2pt')
-# twopointlike = __import__('2pt_like_allmarg')
+twopointlike_allmarg = __import__('2pt_like_allmarg')
 twopointlike = __import__('2pt_like')
 
 class Params():
@@ -107,6 +107,9 @@ def main():
     parser.add_argument('--include-norm', dest = 'include_norm', action='store_true',
                            help = 'Include normalization detC in the likelihood.')
 
+    parser.add_argument('--do-pm-marg', dest = 'pm_marg', action='store_true',
+                           help = 'Use point mass marginalization.')
+
     args = parser.parse_args()
 
     # Load labels from chain file
@@ -120,8 +123,7 @@ def main():
     params.set(args.like_section, 'data_file', args.data_vector)
 
     # Loads the likelihood object building the data vector and covariance
-    # like_obj = twopointlike.TwoPointGammatMargLikelihood(params)
-    like_obj = twopointlike.TwoPointLikelihood(params)
+    like_obj = twopointlike_allmarg.TwoPointGammatMargLikelihood(params) if args.pm_marg else twopointlike.TwoPointLikelihood(params)
 
     # Gets data vector and inverse covariance from likelihood object
     data_vector = np.atleast_1d(like_obj.data_y)
