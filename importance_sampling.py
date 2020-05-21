@@ -107,6 +107,9 @@ def main():
     parser.add_argument('--include-norm', dest = 'include_norm', action='store_true',
                            help = 'Include normalization detC in the likelihood.')
 
+    parser.add_argument('--use-chi2', dest = 'chi2', action='store_true',
+                           help = 'Multiplies old like by -0.5. Useful when using chi2 column instead of likelihood.')
+
     parser.add_argument('--do-pm-marg', dest = 'pm_marg', action='store_true',
                            help = 'Use point mass marginalization.')
 
@@ -174,7 +177,10 @@ def main():
                 output.write('# Previous weights were found and incorporated in weight column\r\n')
             
             # Defines how we extract likelihood from the chain file
-            old_like = lambda vec: vec[like_i]
+            if args.chi2:
+                old_like = lambda vec: -0.5*vec[like_i]
+            else:
+                old_like = lambda vec: vec[like_i]
             
             loglikediff = []
             oldweights = []
