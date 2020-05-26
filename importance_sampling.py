@@ -15,7 +15,7 @@ import sys, os
 # Imports 2pt_like module
 sys.path.append(os.environ['COSMOSIS_SRC_DIR'] + '/cosmosis-standard-library/likelihood/2pt')
 twopointlike_allmarg = __import__('2pt_like_allmarg')
-twopointlike = __import__('2pt_like')
+# twopointlike = __import__('2pt_like')
 
 class Params():
     """This just mimicks the SectionOption class used by cosmosis to read values from params.ini"""
@@ -110,9 +110,6 @@ def main():
     parser.add_argument('--use-chi2', dest = 'chi2', action='store_true',
                            help = 'Multiplies old like by -0.5. Useful when using chi2 column instead of likelihood.')
 
-    parser.add_argument('--do-pm-marg', dest = 'pm_marg', action='store_true',
-                           help = 'Use point mass marginalization.')
-
     args = parser.parse_args()
 
     # Load labels from chain file
@@ -126,7 +123,8 @@ def main():
     params.set(args.like_section, 'data_file', args.data_vector)
 
     # Loads the likelihood object building the data vector and covariance
-    like_obj = twopointlike_allmarg.TwoPointGammatMargLikelihood(params) if args.pm_marg else twopointlike.TwoPointLikelihood(params)
+    like_obj = twopointlike_allmarg.TwoPointGammatMargLikelihood(params)
+    # like_obj = twopointlike.TwoPointLikelihood(params)
 
     # Gets data vector and inverse covariance from likelihood object
     data_vector = np.atleast_1d(like_obj.data_y)
