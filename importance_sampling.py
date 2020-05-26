@@ -96,7 +96,7 @@ def main():
 
     parser.add_argument('--like-section', dest = 'like_section',
                            default = '2pt_like', required = False,
-                           help = 'The 2pt_like section name used in the baseline chain. (default: 2pt_like).')
+                           help = 'The 2pt_like configuration section name used in the baseline chain. (default: 2pt_like).')
 
     # SJ begin
     parser.add_argument('--like-column', dest = 'like_column',
@@ -104,11 +104,8 @@ def main():
                            help ='Likelihood column name in the baseline chain. (LIKELIHOODS--2PT_LIKE if chain was run with external data sets)')
     # SJ end
 
-    parser.add_argument('--include-norm', dest = 'include_norm', action='store_true',
-                           help = 'Include normalization detC in the likelihood.')
-
     parser.add_argument('--use-chi2', dest = 'chi2', action='store_true',
-                           help = 'Multiplies old like by -0.5. Useful when using chi2 column instead of likelihood.')
+                           help = 'Treat like column as chi2, multiplying it by an additional -0.5 factor (useful when using chi2 column instead of likelihood).')
 
     args = parser.parse_args()
 
@@ -131,7 +128,9 @@ def main():
     precision_matrix = like_obj.inv_cov
     covariance_matrix = like_obj.cov
 
-    if args.include_norm:
+    include_norm = params.get_string('include_norm').lower() in ['true', 't', 'yes']
+
+    if include_norm:
         sign, log_det = np.linalg.slogdet(covariance_matrix)
 
     # SJ begin
@@ -168,7 +167,7 @@ def main():
             output.write('# Data vector: {}\r\n'.format(args.data_vector))
             output.write('# Data vector size (from base chain): {}\r\n'.format(np.sum(theory_i)))
 
-            if args.include_norm:
+            if include_norm:
                 output.write('# Including detC factor in likelihood\r\n')
 
             if weight_i != -1:
@@ -184,7 +183,7 @@ def main():
             oldweights = []
             weights = []
             
-            # Iterate through lines to compute IS weights (can probably rewrite this as array funcs but not necessary)
+            # Iterate through lines to compute IS weights (manually splitting lines to minimize use of RAM)
             for line in f:
                 if line[0] == '#':
                     continue
@@ -192,7 +191,7 @@ def main():
                 d = data_vector - vec[theory_i]
                 new_like = -np.einsum('i,ij,j', d, precision_matrix, d)/2
 
-                if args.include_norm:
+                if include_norm:
                     new_like += -0.5*log_det
 
                 log_is_weight = new_like - old_like(vec)
@@ -232,8 +231,6 @@ def main():
 
                 output.write('%e\t%e\t%e\t%e\r\n' % (old_like(vec), w_old, new_like, weight))
 
-            output.write('# <log_weight> = %f\r\n' % (total_is/norm_fact))
-
             oldweights = np.array(oldweights)
             weights = np.array(weights)
             loglikediff = np.array(loglikediff)
@@ -249,22 +246,27 @@ def main():
 
             final_ess = weights.sum()**2/(weights**2).sum()
 
-            #TODO: ESS using e^loglikediff and normalized correctly.
             print()
-            print('Weighted average difference of logposterior: {}'.format(-loglikediff_mean)) #this should match total_is/normfact
-            print('Check: same result, using individual calculation: {}'.format(total_is/norm_fact))
-            print('Weighted RMS difference of logposterior: {}'.format(loglikediff_rms))
+            print('Finished!')
 
-            print('Baseline Sample Size = {}'.format(Nsample))
-            print('Baseline ESS (assuming uncorrelated samples) = {}'.format(oldweights.sum()**2/(oldweights**2).sum()))
+            def write_output(line=''):
+                line = str(line)
+                print(line)
+                output.write('# ' + line + '\r\n')
+                return line
 
-            print('RMS(log_weight) = {}'.format(loglikediff_rms))
-            print('Importance sampling ESS = {}'.format(eff_sample_frac))
-            print('Final ESS = {}'.format(final_ess))
-
-            output.write('# RMS(log_weight) = {}\r\n'.format(loglikediff_rms))
-            output.write('# Importance sampling ESS = {}\r\n'.format(eff_sample_frac))
-            output.write('# Final ESS = {}'.format(final_ess))
+            #TODO: ESS using e^loglikediff and normalized correctly.
+            write_output()
+            write_output('Weighted average difference of logposterior: {}'.format(-loglikediff_mean)) #this should match total_is/normfact
+            if not np.isclose(-loglikediff_mean, total_is/norm_fact, 1e-4):
+                write_output('WARNING: same result, using independent calculation: {}'.format(total_is/norm_fact))
+            write_output('Weighted RMS difference of logposterior: {}'.format(loglikediff_rms))
+            write_output()
+            write_output('Base chain number of samples = {}'.format(Nsample))
+            write_output('Weighted effective sample size = {}'.format(eff_sample_frac))
+            write_output()
+            write_output('Base chain effective sample size (assuming uncorrelated samples) = {}'.format(oldweights.sum()**2/(oldweights**2).sum()))
+            write_output('Final effective sample size = {}'.format(final_ess))
 
 if __name__ == '__main__':
     main()
