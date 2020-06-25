@@ -4,18 +4,18 @@
 import numpy as np
 import matplotlib.pyplot as plot
 from getdist import MCSamples, plots
-import argparse, configparser
+import argparse, configparser, copy
 
 not_param = [
-		'like',
-		'old_like',
-		'delta_loglike',
-		'new_like',
-		'prior',
-		'post',
-		'2pt_like',
-		'old_weight',
-		'weight',
+	'like',
+	'old_like',
+	'delta_loglike',
+	'new_like',
+	'prior',
+	'post',
+	'2pt_like',
+	'old_weight',
+	'weight',
 ]
 
 label_dict = {
@@ -88,14 +88,24 @@ def load_ini(filename, ini=None):
 		ini = ini.upper()
 		with open(filename) as f:
 			line = f.readline()
-			lines=[]
+			lines = []
+
+			print("Looking for START_OF_{} in file {}".format(ini, filename))
+
 			while("START_OF_{}".format(ini) not in line):
 				line = f.readline()
+				if line == '':
+					raise Exception('START_OF_{} not found in file {}.'.format(ini, filename))
 			
 			while("END_OF_{}".format(ini) not in line):
 				line = f.readline()
 				lines.append(line.replace('#', ''))
-			values.read_string('\r'.join(lines[:-1]))
+				if line == '':
+					raise Exception('END_OF_{} not found in file {}.'.format(ini, filename))
+
+
+	values.read_string('\r'.join(lines[:-1]))
+
 	return values
 
 class Chain:
@@ -116,11 +126,11 @@ class Chain:
 					continue
 				else:
 					data.append(np.array(line.split(), dtype=np.double)[mask])
-		self.data = {labels[mask][i].lower(): col for i,col in enumerate(np.array(data).T)}
+		self.data = {labels[mask][i].lower(): col for i, col in enumerate(np.array(data).T)}
 		return self.data
 
 	def __add_extra(self):
-		
+	
 		self.data['cosmological_parameters--s8'] = \
 			self.data['cosmological_parameters--sigma_8']*(self.data['cosmological_parameters--omega_m']/0.3)**0.5
 
@@ -163,10 +173,10 @@ class Chain:
 		values = load_ini(self.filename, ini='values' if filename is None else None)
 
 		return {p:
-				float((lambda x: x[1] if len(x) == 3 else x[0])(values.get(*p.split('--')).split())) \
-				if values.has_option(*p.split('--')) \
-				else None \
-				for p in self.get_params()}
+			float((lambda x: x[1] if len(x) == 3 else x[0])(values.get(*p.split('--')).split())) \
+			if values.has_option(*p.split('--')) \
+			else None \
+			for p in self.get_params()}
 
 	def get_ranges(self, filename=None):
 		"""loads range values from values.ini file or chain file"""
@@ -174,17 +184,17 @@ class Chain:
 		values = load_ini(self.filename, ini='values' if filename is None else None)
 
 		return {p:
-				(lambda x: [float(x[0]), float(x[2])] if len(x) == 3 else [None, None])(values.get(*p.split('--')).split()) \
-				if values.has_option(*p.split('--')) \
-				else [None, None] \
-				for p in self.get_params()}
+			(lambda x: [float(x[0]), float(x[2])] if len(x) == 3 else [None, None])(values.get(*p.split('--')).split()) \
+			if values.has_option(*p.split('--')) \
+			else [None, None] \
+			for p in self.get_params()}
 
 	def get_MCSamples(self):
-		
+	
 		return MCSamples(
 			samples=self.on_params(),
-			weights=self.data['weight'] if 'weight' in self.data.keys() else None,
-			loglikes=self.data['like'],
+			weights=self.get_weights(),
+			loglikes=self.get_likes(),
 
 			ranges=self.get_ranges(),
 			sampler='nested' if self.get_sampler() in ['multinest', 'polychord'] else 'mcmc',
@@ -193,14 +203,21 @@ class Chain:
 			labels=[l for l in self.get_labels()],
 		)
 
+	def get_weights(self):
+		return self.data['weight'] if 'weight' in self.data.keys() else None
+
+	def get_likes(self):
+		return self.data['like']
+
 
 class ImportanceChain(Chain):
 	"""Description: object to load the importance weights, plot and compute statistics.
 	   Should be initialized with reference to the respective baseline chain: ImportanceChain(base_chain)"""
 
-	def __init__(self, filename, base_chain):
+	def __init__(self, filename, base_chain, iwis=False):
 		self.filename = filename
 		self.base = base_chain
+		self.iwis = iwis
 		self.load_data()
 
 	def get_dloglike_stats(self):
@@ -210,29 +227,29 @@ class ImportanceChain(Chain):
 		rmsdloglike = np.average((self.data['new_like'] - self.data['old_like'])**2, weights=self.data['old_weight'])**0.5
 	
 		return dloglike, rmsdloglike
-    
+	
 	def get_ESS_NW(self, weight_by_multiplicity=True):
-	    """compute and return effective sample size of IS chain. 
-	    If IS chain is identical to baseline, then just equals full sample size.
-	    Insensitive to multiplicative scaling, i.e. if IS chain shows all points exactly half as likely, will not show up in ESS,
-	    so use mean_dloglike stat for that.
-	    (see e.g. https://arxiv.org/pdf/1602.03572.pdf or 
-	    http://www.nowozin.net/sebastian/blog/effective-sample-size-in-importance-sampling.html)"""
-	    #want stats on change to weights, but noisier if compute from new_weight/old_weight, so use e^dloglike directly.
-	    weight_ratio = np.exp(self.data['new_like'] - self.data['old_like'])
-	    Nsamples = len(weight_ratio)
-	    if weight_by_multiplicity: 
-	        mult = self.data['old_weight']
-	    else:
-	        mult = np.ones_like(weight_ratio)
-	    normed_weights = weight_ratio / (np.average(weight_ratio, weights=mult)) #pulled out factor of Nsamples
-	    return Nsamples * 1./(np.average(normed_weights**2, weights=mult))
+		"""compute and return effective sample size of IS chain. 
+		If IS chain is identical to baseline, then just equals full sample size.
+		Insensitive to multiplicative scaling, i.e. if IS chain shows all points exactly half as likely, will not show up in ESS,
+		so use mean_dloglike stat for that.
+		(see e.g. https://arxiv.org/pdf/1602.03572.pdf or 
+		http://www.nowozin.net/sebastian/blog/effective-sample-size-in-importance-sampling.html)"""
+		#want stats on change to weights, but noisier if compute from new_weight/old_weight, so use e^dloglike directly.
+		weight_ratio = np.exp(self.data['new_like'] - self.data['old_like'])
+		Nsamples = len(weight_ratio)
+		if weight_by_multiplicity: 
+			mult = self.data['old_weight']
+		else:
+			mult = np.ones_like(weight_ratio)
+		normed_weights = weight_ratio / (np.average(weight_ratio, weights=mult)) #pulled out factor of Nsamples
+		return Nsamples * 1./(np.average(normed_weights**2, weights=mult))
 
-	def get_ESS(self, weight_by_multiplicity=True):
+	def get_ESS(self):
 		"""compute and return effective sample size."""
 		# return self.get_MCSamples().getEffectiveSamples()
 
-		w = self.data['weight']
+		w = self.get_weights()
 		return w.sum()**2/(w**2).sum()
 
 	def get_mean_err(self, params):
@@ -243,31 +260,50 @@ class ImportanceChain(Chain):
 
 	def plot_weights(self, ax=None, plotbaseline=True):
 		if ax is None:
-			f, ax = plt.subplots(figsize=(10,2))
+			f, ax = plot.subplots(figsize=(10,2))
 		if plotbaseline:
 			ax.plot(self.data['old_weight'], label='Baseline', zorder=2)
-		ax.plot(self.data['weight'], label=self.name, alpha=0.5)
+		ax.plot(self.get_weights(), label=self.filename, alpha=0.5)
 		ax.set_ylabel('weight', fontsize=20)
 		ax.set_xlabel('Sample', fontsize=20)
 		ax.legend(loc=2, fontsize=20)
 
 		return ax
 
-	def get_MCSamples(self):
-		if not hasattr(self, 'mcsamples'):
-			self.mcsamples = MCSamples(
-				samples=self.base.on_params(),
-				weights=self.data['weight'],
-				loglikes=self.data['new_like'],
+	def on_params(self):
+		return self.base.on_params()
 
-				ranges=self.base.get_ranges(),
-				sampler='nested' if self.base.get_sampler() in ['multinest', 'polychord'] else 'mcmc',
+	def get_likes(self):
+		return self.data['new_like']
 
-				names=self.base.get_params(),
-				labels=[l for l in self.base.get_labels()],
-			)
+	def get_weights(self):
+		is_weights = np.exp(self.data['new_like'] - self.data['old_like'])
 
-		return self.mcsamples
+		if self.iwis:
+			iwis_weights = is_weights/(is_weights.sum() - is_weights)
+			weights = self.data['old_weight']*iwis_weights
+		else:
+			weights = self.data['old_weight']*is_weights
+
+		return weights/weights.sum()
+
+	def get_ranges(self, filename=None):
+		return self.base.get_ranges(filename=filename)
+
+	def get_sampler(self):
+		return self.base.get_sampler()
+
+	def get_params(self):
+		return self.base.get_params()
+
+	def get_labels(self):
+		return self.base.get_labels()
+
+	def on_params(self):
+		return self.base.on_params()
+
+	def get_fiducial(self, filename=None):
+		return self.base.get_fiducial(filename=filename)
 
 def main():
 	parser = argparse.ArgumentParser(description = '')
@@ -277,30 +313,33 @@ def main():
 	parser.add_argument('output', help = 'Output root.')
 
 	# parser.add_argument('--burn-in', dest = 'burn',
-	# 					    default = 0, required = False,
-	# 					    help = 'Number of samples to burn-in.')
+	# 			    default = 0, required = False,
+	# 			    help = 'Number of samples to burn-in.')
 
 	parser.add_argument('--fig-format', dest = 'fig_format',
-						default = 'pdf', required = False,
-						help = 'Export figures in specified format.')
+					default = 'pdf', required = False,
+					help = 'Export figures in specified format.')
 
 	parser.add_argument('--triangle-plot', dest = 'triangle_plot', action='store_true',
-						help = 'Generate triangle plots.')
+					help = 'Generate triangle plots.')
 
 	parser.add_argument('--base-plot', dest = 'base_plot', action='store_true',
-						help = 'Include base chain in triangle plots.')
+					help = 'Include base chain in triangle plots.')
 
 	parser.add_argument('--plot-weights', dest = 'plot_weights', action='store_true',
-						help = 'Plot importance weights.')
+					help = 'Plot importance weights.')
 
 	parser.add_argument('--stats', dest = 'stats', action='store_true',
-						help = 'Compute importance sampling statistics.')
+					help = 'Compute importance sampling statistics.')
 
 	parser.add_argument('--all', dest = 'all', action='store_true',
-						help = 'Same as --stats --triangle-plot --base-plot.')
+					help = 'Same as --stats --triangle-plot --base-plot.')
+
+	parser.add_argument('--iwis', dest = 'iwis', action='store_true',
+					help = 'Use IWIS as in (Skare et al. 2003).')
 
 	# parser.add_argument('--kde', dest = 'kde', action='store_true',
-	# 					help = 'Uses KDE smoothing in the triangle plot.')
+	# 			help = 'Uses KDE smoothing in the triangle plot.')
 
 	args = parser.parse_args()
 
@@ -311,13 +350,15 @@ def main():
 		args.plot_weights = True
 
 	base_chain = Chain(args.chain)
-	is_chains = [ImportanceChain(iw_filename, base_chain) for i, iw_filename in enumerate(args.importance_weights)]
+	# base_chain2 = copy.deepcopy(base_chain)
+	# base_chain2.data['cosmological_parameters--omega_m'] -= 0.3000 - float(args.importance_weights[0].replace('importance_weights/importance_sampling_des_y3_3x2pt_lcdm_polychord_prepub_shifted_omega_m_lcdm_shifted_omega_m_', '').replace('_weights.txt', ''))
+	is_chains = [ImportanceChain(iw_filename, base_chain, iwis=args.iwis) for i, iw_filename in enumerate(args.importance_weights)]
 
 	N_IS = len(is_chains)
 
 	# Plot IS weights
 	if args.plot_weights:
-		f, axes = plt.subplots(N_IS, figsize=(10, 2*N_IS))
+		f, axes = plot.subplots(N_IS, figsize=(10, 2*N_IS))
 		for i,is_chain in enumerate(is_chains):
 			is_chain.plot_weights(ax=axes[i] if N_IS > 1 else axes)
 		f.savefig(args.output + '_weights.' + args.fig_format, bbox_inches='tight')
@@ -327,6 +368,7 @@ def main():
 		samples = []
 		if args.base_plot:
 			samples.append(base_chain.get_MCSamples())
+		samples.extend([is_chain.get_MCSamples() for is_chain in is_chains])
 		samples.extend([is_chain.get_MCSamples() for is_chain in is_chains])
 
 		g = plots.getSubplotPlotter()
@@ -352,6 +394,6 @@ def main():
 			errors = '\t'.join([str(p) for p in is_chain.get_mean_err(params2plot)])
 			stats_out += '{}\t{}\t{}\t{}\r\n'.format(is_chain.filename, is_chain.get_ESS(), means, errors)
 		print(stats_out)
-				
+		
 if __name__ == "__main__":
 	main()

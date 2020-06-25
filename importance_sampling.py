@@ -12,8 +12,13 @@ import numpy as np
 import argparse, configparser
 import sys, os
 
-# Imports 2pt_like module
-sys.path.append(os.environ['COSMOSIS_SRC_DIR'] + '/cosmosis-standard-library/likelihood/2pt')
+#  Imports 2pt_like module
+try:
+    sys.path.append(os.environ['COSMOSIS_SRC_DIR'] + '/cosmosis-standard-library/likelihood/2pt')
+except:
+    print("Failed to find COSMOSIS dir. Did you set up COSMOSIS?")
+    sys.exit(1)
+
 twopointlike_allmarg = __import__('2pt_like_allmarg')
 # twopointlike = __import__('2pt_like')
 
@@ -128,7 +133,7 @@ def main():
     precision_matrix = like_obj.inv_cov
     covariance_matrix = like_obj.cov
 
-    include_norm = params.get_string('include_norm').lower() in ['true', 't', 'yes']
+    include_norm = params.get_string('include_norm', default='F').lower() in ['true', 't', 'yes']
 
     if include_norm:
         sign, log_det = np.linalg.slogdet(covariance_matrix)
@@ -244,6 +249,7 @@ def main():
             normed_weights = weight_ratio / (Nsample * np.average(weight_ratio, weights=oldweights)) #really doing weighted sum
             eff_sample_frac = 1./(Nsample * np.average(normed_weights**2, weights=oldweights))
 
+            base_ess = oldweights.sum()**2/(oldweights**2).sum()
             final_ess = weights.sum()**2/(weights**2).sum()
 
             print()
@@ -257,16 +263,16 @@ def main():
 
             #TODO: ESS using e^loglikediff and normalized correctly.
             write_output()
-            write_output('Weighted average difference of logposterior: {}'.format(-loglikediff_mean)) #this should match total_is/normfact
+            write_output('dloglike_mean: {}'.format(-loglikediff_mean)) #this should match total_is/normfact
             if not np.isclose(-loglikediff_mean, total_is/norm_fact, 1e-4):
-                write_output('WARNING: same result, using independent calculation: {}'.format(total_is/norm_fact))
-            write_output('Weighted RMS difference of logposterior: {}'.format(loglikediff_rms))
+                write_output('WARNING: same quantity, but using independent calculation: {}'.format(total_is/norm_fact))
+            write_output('dloglike_rms: {}'.format(loglikediff_rms))
             write_output()
-            write_output('Base chain number of samples = {}'.format(Nsample))
-            write_output('Weighted effective sample size = {}'.format(eff_sample_frac))
+            write_output('ESS_baseline (assuming uncorrelated samples) = {}'.format(base_ess))
+            write_output('ESS_IS = {}'.format(final_ess))
+            write_output('- ratio = {}'.format(final_ess/base_ess)) # Ratio (variance inflation factor) = base_ess/final_ess
             write_output()
-            write_output('Base chain effective sample size (assuming uncorrelated samples) = {}'.format(oldweights.sum()**2/(oldweights**2).sum()))
-            write_output('Final effective sample size = {}'.format(final_ess))
+            write_output('ESS_IS_alt = {}'.format(eff_sample_frac))
 
 if __name__ == '__main__':
     main()
