@@ -281,6 +281,7 @@ class ImportanceChain(Chain):
 
 		if self.iwis:
 			iwis_weights = is_weights/(is_weights.sum() - is_weights)
+			print(iwis_weights)
 			weights = self.data['old_weight']*iwis_weights
 		else:
 			weights = self.data['old_weight']*is_weights
@@ -335,8 +336,8 @@ def main():
 	parser.add_argument('--all', dest = 'all', action='store_true',
 					help = 'Same as --stats --triangle-plot --base-plot.')
 
-	parser.add_argument('--iwis', dest = 'iwis', action='store_true',
-					help = 'Use IWIS as in (Skare et al. 2003).')
+	# parser.add_argument('--iwis', dest = 'iwis', action='store_true',
+	# 				help = 'Use IWIS as in (Skare et al. 2003).')
 
 	# parser.add_argument('--kde', dest = 'kde', action='store_true',
 	# 			help = 'Uses KDE smoothing in the triangle plot.')
@@ -352,7 +353,8 @@ def main():
 	base_chain = Chain(args.chain)
 	# base_chain2 = copy.deepcopy(base_chain)
 	# base_chain2.data['cosmological_parameters--omega_m'] -= 0.3000 - float(args.importance_weights[0].replace('importance_weights/importance_sampling_des_y3_3x2pt_lcdm_polychord_prepub_shifted_omega_m_lcdm_shifted_omega_m_', '').replace('_weights.txt', ''))
-	is_chains = [ImportanceChain(iw_filename, base_chain, iwis=args.iwis) for i, iw_filename in enumerate(args.importance_weights)]
+	is_chains = [ImportanceChain(iw_filename, base_chain) for i, iw_filename in enumerate(args.importance_weights)]
+	# is_chains.extend([ImportanceChain(iw_filename, base_chain, iwis=True) for i, iw_filename in enumerate(args.importance_weights)])
 
 	N_IS = len(is_chains)
 
@@ -368,7 +370,6 @@ def main():
 		samples = []
 		if args.base_plot:
 			samples.append(base_chain.get_MCSamples())
-		samples.extend([is_chain.get_MCSamples() for is_chain in is_chains])
 		samples.extend([is_chain.get_MCSamples() for is_chain in is_chains])
 
 		g = plots.getSubplotPlotter()
