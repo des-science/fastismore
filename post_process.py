@@ -36,7 +36,12 @@ label_dict = {
 	'cosmological_parameters--a_s':     r'A_s',
 	'cosmological_parameters--omnuh2':  r'\Omega_{\nu}',
 	'cosmological_parameters--sigma_8': r'\sigma_8',
+	'cosmological_parameters--sigma_12': r'\sigma_12',
 	'cosmological_parameters--s8': r'S_8',
+        'cosmological_parameters--massive_nu': r'\nu_\text{massive}',
+        'cosmological_parameters--massless_nu': r'\nu_\text{massless}',
+        'cosmological_parameters--omega_k': r'\Omega_k',
+        'cosmological_parameters--yhe': r'Y_\text{He}',
 
 	'intrinsic_alignment_parameters--a': r'A_{IA}',
 	'intrinsic_alignment_parameters--alpha': r'\alpha_{IA}',
@@ -69,6 +74,13 @@ label_dict = {
 	'intrinsic_alignment_parameters--alpha1': r'\alpha_1',
 	'intrinsic_alignment_parameters--alpha2': r'\alpha_2',
 	'intrinsic_alignment_parameters--bias_ta': r'b_ta',
+        'intrinsic_alignment_parameters--z_piv': r'z_\text{piv}',
+
+        'mag_alpha_lens--alpha_1': r'\alpha_\text{lens}^1',
+        'mag_alpha_lens--alpha_2': r'\alpha_\text{lens}^2',
+        'mag_alpha_lens--alpha_3': r'\alpha_\text{lens}^3',
+        'mag_alpha_lens--alpha_4': r'\alpha_\text{lens}^4',
+        'mag_alpha_lens--alpha_5': r'\alpha_\text{lens}^5',
 }
 
 params2plot = [
@@ -76,7 +88,7 @@ params2plot = [
 	 'cosmological_parameters--sigma_8',
 ]
 
-param_to_label = np.vectorize(lambda param: label_dict[param])
+param_to_label = np.vectorize(lambda param: label_dict[param] if param in label_dict else param)
 
 def load_ini(filename, ini=None):
 	"""loads given ini info from chain file. If ini=None, loads directly from file.ini"""
@@ -189,18 +201,19 @@ class Chain:
 			else [None, None] \
 			for p in self.get_params()}
 
-	def get_MCSamples(self):
+	def get_MCSamples(self, settings=None):
 	
 		return MCSamples(
 			samples=self.on_params(),
 			weights=self.get_weights(),
-			loglikes=self.get_likes(),
+			#loglikes=self.get_likes(),
 
 			ranges=self.get_ranges(),
 			sampler='nested' if self.get_sampler() in ['multinest', 'polychord'] else 'mcmc',
 
 			names=self.get_params(),
 			labels=[l for l in self.get_labels()],
+			settings=settings,
 		)
 
 	def get_weights(self):
@@ -339,8 +352,8 @@ def main():
 	# parser.add_argument('--iwis', dest = 'iwis', action='store_true',
 	# 				help = 'Use IWIS as in (Skare et al. 2003).')
 
-	# parser.add_argument('--kde', dest = 'kde', action='store_true',
-	# 			help = 'Uses KDE smoothing in the triangle plot.')
+	parser.add_argument('--classic-kde', dest = 'classic_kde', action='store_true',
+					help = 'Use a constant KDE kernel instead of getdist optimized kernel.')
 
 	args = parser.parse_args()
 
@@ -368,9 +381,10 @@ def main():
 	# Make triangle plot
 	if args.triangle_plot:
 		samples = []
+		settings = {'smooth_scale_1D': 0.35, 'smooth_scale_2D': 0.5} if args.classic_kde else None
 		if args.base_plot:
-			samples.append(base_chain.get_MCSamples())
-		samples.extend([is_chain.get_MCSamples() for is_chain in is_chains])
+			samples.append(base_chain.get_MCSamples(settings=settings))
+		samples.extend([is_chain.get_MCSamples(settings=settings) for is_chain in is_chains])
 
 		g = plots.getSubplotPlotter()
 

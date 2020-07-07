@@ -19,21 +19,75 @@ except:
     print("Failed to find COSMOSIS dir. Did you set up COSMOSIS?")
     sys.exit(1)
 
-twopointlike_allmarg = __import__('2pt_like_allmarg')
-# twopointlike = __import__('2pt_like')
+twopointlike = __import__('2pt_like_allmarg')
+
+class ImportanceSamplingLikelihood(twopointlike.TwoPointGammatMargLikelihood):
+    def __init__(self, options):
+        super(ImportanceSamplingLikelihood, self).__init__(options)
 
 class Block():
-    def __init__(self, labels, row):
+    def __init__(self, labels, like_column='like'):
         self.labels = labels
-        self.row = row
+
+        if like_column == 'post':
+            print("Using old loglike = post - prior.")
+            if 'post' not in labels:
+                raise Exception("Couldn't find column: post.")
+            if 'prior' not in labels:
+                raise Exception("Couldn't find column: prior.")
+            prior_i = np.where(labels == 'prior')[0]
+            post_i = np.where(labels == 'post')[0]
+            self._like = lambda vec: vec[post_i] - vec[prior_i]
+        elif 'chi2' in like_column:
+            print("Using old loglike = -0.5*{}.".format(like_column))
+            if like_column not in labels:
+                raise Exception("Couldn't find column: {}.".format(like_column))
+            chi_i = np.where(labels == like_column)[0]
+            self._like = lambda vec: -0.5*vec[chi_i]
+        else:
+            print("Using old loglike = {}.".format(like_column))
+            if like_column not in labels:
+                raise Exception("Couldn't find column: {}.".format(like_column))
+            like_i = np.where(labels == like_column)[0]
+            self._like = lambda vec: vec[like_i]
+
+        if 'weight' in labels:
+            weight_i = np.where(labels == 'weight')[0]
+            self._weight = lambda vec: vec[weight_i]
+            self.weighted = True
+        else:
+            self._weight = lambda vec: 1.0
+            self.weighted = False
+
+        theory_i = np.array(['data_vector--2pt_theory_' in l for l in labels])
+
+        ## NW begin
+        if theory_i.sum() == 0:
+            raise Exception("No theory vector columns found! Ensure your baseline chain has theory vector of form 'data_vector--2pt_theory_XXX'?")
+        else:
+            self.theory_len = theory_i.sum()
+            self._theory = lambda vec: vec[theory_i]
+        ## NW end
+
         return
 
     def get_double(self, section, option):
         label = '--'.join([section, option])
-#        print("Asking block for {}".format(label))
         index = np.where(self.labels == label)[0]
-#        print("Value {}".format(self.row[index]))
         return self.row[index]
+
+    def update(self, row):
+        self.row = row
+        return
+
+    def get_theory(self):
+        return self._theory(self.row)
+
+    def get_like(self):
+        return self._like(self.row)
+
+    def get_weight(self):
+        return self._weight(self.row)
 
 class Params():
     """This just mimicks the SectionOption class used by cosmosis to read values from params.ini"""
@@ -119,11 +173,8 @@ def main():
     # SJ begin
     parser.add_argument('--like-column', dest = 'like_column',
                            default = 'like', required = False,
-                           help ='Likelihood column name in the baseline chain. (LIKELIHOODS--2PT_LIKE if chain was run with external data sets)')
+                           help ='Likelihood column name in the baseline chain. (likelihoods--2pt_like if chain was run with external data sets)')
     # SJ end
-
-    parser.add_argument('--use-chi2', dest = 'chi2', action='store_true',
-                           help = 'Treat like column as chi2, multiplying it by an additional -0.5 factor (useful when using chi2 column instead of likelihood).')
 
     parser.add_argument('--include-norm', dest = 'include_norm', action='store_true',
                            help = 'Force include_norm option.')
@@ -141,36 +192,14 @@ def main():
     params.set(args.like_section, 'data_file', args.data_vector)
 
     # Loads the likelihood object building the data vector and covariance
-    like_obj = twopointlike_allmarg.TwoPointGammatMargLikelihood(params)
-    # like_obj = twopointlike.TwoPointLikelihood(params)
+    like_obj = ImportanceSamplingLikelihood(params)
 
     # Gets data vector and inverse covariance from likelihood object
     data_vector = np.atleast_1d(like_obj.data_y)
 
     include_norm = params.get_string('include_norm', default='F').lower() in ['true', 't', 'yes'] or args.include_norm
-    include_norm = True
 
-
-    # SJ begin
-    like_i   = np.where(labels == args.like_column)[0]  if args.like_column in labels else -1
-    # SJ end
-    prior_i   = np.where(labels == 'prior')[0]  if 'prior' in labels else -1
-    post_i   = np.where(labels == 'post')[0]  if 'post' in labels else -1
-    weight_i = np.where(labels == 'weight')[0] if 'weight' in labels else -1
-    theory_i = np.array(['data_vector--2pt_theory_' in l for l in labels])
-
-
-    if like_i == -1:
-        raise Exception("Likelihood column {} not found.".format(args.like_column))
-    else:
-        pass
-
-    ## NW begin
-    if theory_i.sum() == 0:
-        raise Exception("No theory vector columns found! Ensure your baseline chain has theory vector of form 'data_vector--2pt_theory_XX'?")
-    else:
-        pass
-    ## NW end
+    block = Block(labels, args.like_column)
 
     total_is = 0.
     norm_fact = 0.
@@ -186,22 +215,13 @@ def main():
             output.write('# Importance sampling weights\r\n')
             output.write('# Chain: {}\r\n'.format(args.chain))
             output.write('# Data vector: {}\r\n'.format(args.data_vector))
-            output.write('# Data vector size (from base chain): {}\r\n'.format(np.sum(theory_i)))
+            output.write('# Data vector size (from base chain): {}\r\n'.format(block.theory_len))
 
             if include_norm:
                 output.write('# Including detC factor in likelihood\r\n')
 
-            if weight_i != -1:
+            if block.weighted:
                 output.write('# Previous weights were found and incorporated in weight column\r\n')
-            
-            # Defines how we extract likelihood from the chain file
-            if args.chi2:
-                old_like = lambda vec: -0.5*vec[like_i]
-            elif args.like_column == 'post' and post_i != -1 and prior_i != -1:
-                print("Using posterior")
-                old_like = lambda vec: vec[post_i] - vec[prior_i]
-            else:
-                old_like = lambda vec: vec[like_i]
             
             loglikediff = []
             oldweights = []
@@ -211,20 +231,19 @@ def main():
             for line in f:
                 if line[0] == '#':
                     continue
-                vec = np.array(line.split(), dtype=np.float64)
 
-                block = Block(labels, vec)
+                block.update(np.array(line.split(), dtype=np.float64))
+
                 covariance_matrix = like_obj.extract_covariance(block)
                 precision_matrix = like_obj.extract_inverse_covariance(block)
 
-                d = data_vector - vec[theory_i]
+                d = data_vector - block.get_theory()
                 new_like = -np.einsum('i,ij,j', d, precision_matrix, d)/2
 
                 if include_norm:
-                    sign, log_det = np.linalg.slogdet(covariance_matrix)
-                    new_like += -0.5*log_det
+                    new_like += -0.5*like_obj.extract_covariance_log_determinant(block)
 
-                log_is_weight = new_like - old_like(vec)
+                log_is_weight = new_like - block.get_like()
                 loglikediff.append(log_is_weight)
                 
                 ## Try to get ratio of likelihoods. If old likelihood is tiny, then we could be dividing two tiny numbers.
@@ -239,13 +258,13 @@ def main():
                 #         likeratio = NaN
                         
                 #avoid dividing tiny numbers
-                if (weight_i != -1) and vec[weight_i] < 1.e-300:
+                if (block.weighted) and block.get_weight() < 1.e-300:
                     likeratio = 0
                 else:
                     likeratio = np.e**log_is_weight #change in prob
                         
-                if weight_i != -1:
-                    w_old = vec[weight_i] #old weight from baseline chain
+                if block.weighted:
+                    w_old = block.get_weight() #old weight from baseline chain
                     
                     weight = likeratio * w_old #new weight
                     norm_fact += w_old
@@ -259,7 +278,7 @@ def main():
                 oldweights.append(w_old)
                 weights.append(weight)
 
-                output.write('%e\t%e\t%e\t%e\r\n' % (old_like(vec), w_old, new_like, weight))
+                output.write('%e\t%e\t%e\t%e\r\n' % (block.get_like(), w_old, new_like, weight))
 
             oldweights = np.array(oldweights)
             weights = np.array(weights)
