@@ -22,6 +22,19 @@ except:
 twopointlike_allmarg = __import__('2pt_like_allmarg')
 # twopointlike = __import__('2pt_like')
 
+class Block():
+    def __init__(self, labels, row):
+        self.labels = labels
+        self.row = row
+        return
+
+    def get_double(self, section, option):
+        label = '--'.join([section, option])
+#        print("Asking block for {}".format(label))
+        index = np.where(self.labels == label)[0]
+#        print("Value {}".format(self.row[index]))
+        return self.row[index]
+
 class Params():
     """This just mimicks the SectionOption class used by cosmosis to read values from params.ini"""
     def __init__(self, filename, section):
@@ -112,6 +125,9 @@ def main():
     parser.add_argument('--use-chi2', dest = 'chi2', action='store_true',
                            help = 'Treat like column as chi2, multiplying it by an additional -0.5 factor (useful when using chi2 column instead of likelihood).')
 
+    parser.add_argument('--include-norm', dest = 'include_norm', action='store_true',
+                           help = 'Force include_norm option.')
+
     args = parser.parse_args()
 
     # Load labels from chain file
@@ -130,19 +146,19 @@ def main():
 
     # Gets data vector and inverse covariance from likelihood object
     data_vector = np.atleast_1d(like_obj.data_y)
-    precision_matrix = like_obj.inv_cov
-    covariance_matrix = like_obj.cov
 
-    include_norm = params.get_string('include_norm', default='F').lower() in ['true', 't', 'yes']
+    include_norm = params.get_string('include_norm', default='F').lower() in ['true', 't', 'yes'] or args.include_norm
+    include_norm = True
 
-    if include_norm:
-        sign, log_det = np.linalg.slogdet(covariance_matrix)
 
     # SJ begin
     like_i   = np.where(labels == args.like_column)[0]  if args.like_column in labels else -1
     # SJ end
+    prior_i   = np.where(labels == 'prior')[0]  if 'prior' in labels else -1
+    post_i   = np.where(labels == 'post')[0]  if 'post' in labels else -1
     weight_i = np.where(labels == 'weight')[0] if 'weight' in labels else -1
     theory_i = np.array(['data_vector--2pt_theory_' in l for l in labels])
+
 
     if like_i == -1:
         raise Exception("Likelihood column {} not found.".format(args.like_column))
@@ -181,22 +197,31 @@ def main():
             # Defines how we extract likelihood from the chain file
             if args.chi2:
                 old_like = lambda vec: -0.5*vec[like_i]
+            elif args.like_column == 'post' and post_i != -1 and prior_i != -1:
+                print("Using posterior")
+                old_like = lambda vec: vec[post_i] - vec[prior_i]
             else:
                 old_like = lambda vec: vec[like_i]
             
             loglikediff = []
             oldweights = []
             weights = []
-            
+
             # Iterate through lines to compute IS weights (manually splitting lines to minimize use of RAM)
             for line in f:
                 if line[0] == '#':
                     continue
                 vec = np.array(line.split(), dtype=np.float64)
+
+                block = Block(labels, vec)
+                covariance_matrix = like_obj.extract_covariance(block)
+                precision_matrix = like_obj.extract_inverse_covariance(block)
+
                 d = data_vector - vec[theory_i]
                 new_like = -np.einsum('i,ij,j', d, precision_matrix, d)/2
 
                 if include_norm:
+                    sign, log_det = np.linalg.slogdet(covariance_matrix)
                     new_like += -0.5*log_det
 
                 log_is_weight = new_like - old_like(vec)
@@ -241,13 +266,14 @@ def main():
             loglikediff = np.array(loglikediff)
             Nsample = len(loglikediff)
             
-            loglikediff_mean = np.average(loglikediff, weights=oldweights)
-            loglikediff_rms = np.average(loglikediff**2, weights=oldweights)**0.5
+            print(oldweights.shape, loglikediff.shape)
+            loglikediff_mean = np.average(loglikediff, weights=oldweights, axis=0)
+            loglikediff_rms = np.average(loglikediff**2, weights=oldweights, axis=0)**0.5
             
             #calc importance sampling effective sample size.
             weight_ratio = np.exp(loglikediff)
-            normed_weights = weight_ratio / (Nsample * np.average(weight_ratio, weights=oldweights)) #really doing weighted sum
-            eff_sample_frac = 1./(Nsample * np.average(normed_weights**2, weights=oldweights))
+            normed_weights = weight_ratio / (Nsample * np.average(weight_ratio, weights=oldweights, axis=0)) #really doing weighted sum
+            eff_sample_frac = 1./(Nsample * np.average(normed_weights**2, weights=oldweights, axis=0))
 
             base_ess = oldweights.sum()**2/(oldweights**2).sum()
             final_ess = weights.sum()**2/(weights**2).sum()
