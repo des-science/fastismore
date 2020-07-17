@@ -1,10 +1,10 @@
 #!/usr/bin/env python
-# 
+#
 # author: Otavio Alves
 #
 # description: This code computes importance weights for a data vector given a
 # chain with data_vector--2pt_theory_### columns
-# 
+#
 # output: output.txt: -1/2*chi2 (log-likelihood) and weight for each point in chain.txt
 #
 
@@ -21,11 +21,34 @@ except:
 
 twopointlike = __import__('2pt_like_allmarg')
 
+def get_ess_dict(weights):
+    w = weights/weights.sum()
+    N = len(w)
+
+    return {
+            'Euclidean distance': 1/(w**2).sum(), # overestimates
+            'Inverse maximum weight': 1/np.max(w), # underestimates; best when bias is large
+
+            'Gini coefficient': -2*np.sum(np.arange(1,N+1)*np.sort(w)) + 2*N + 1, # best when bias and N are small
+            'Square root sum': np.sum(np.sqrt(w))**2,
+            'Peak integrated': -N*np.sum(w[w>=1/N]) + np.sum(w>=1/N) + N,
+            'Shannon entropy': 2**(-np.sum(w[w>0]*np.log2(w[w>0]))),
+
+            # Not stable
+            # 'Maximum': N + 1 - N*np.max(w),
+            # 'Peak count': np.sum(w>=1/N),
+            # 'Minimum': N*(N - 1)*np.min(w) + 1,
+            # 'Inverse minimum': 1/((1-N)*np.min(w) + 1),
+            # 'Entropy': N - 1/np.log2(N)*(-np.sum(w[w>0]*np.log2(w[w>0]))),
+            # 'Inverse entropy': -N*np.log2(N)/(-N*np.log2(N) + (N - 1)*(-np.sum(w[w>0]*np.log2(w[w>0])))),
+            }
+
 class ImportanceSamplingLikelihood(twopointlike.TwoPointGammatMargLikelihood):
     def __init__(self, options):
         super(ImportanceSamplingLikelihood, self).__init__(options)
 
 class Block():
+    """ This class mimicks cosmosis' data block. The likelihood object reads from it."""
     def __init__(self, labels, like_column='like'):
         self.labels = labels
 
@@ -37,23 +60,23 @@ class Block():
                 raise Exception("Couldn't find column: prior.")
             prior_i = np.where(labels == 'prior')[0]
             post_i = np.where(labels == 'post')[0]
-            self._like = lambda vec: vec[post_i] - vec[prior_i]
+            self._like = lambda vec: float(vec[post_i] - vec[prior_i])
         elif 'chi2' in like_column:
             print("Using old loglike = -0.5*{}.".format(like_column))
             if like_column not in labels:
                 raise Exception("Couldn't find column: {}.".format(like_column))
             chi_i = np.where(labels == like_column)[0]
-            self._like = lambda vec: -0.5*vec[chi_i]
+            self._like = lambda vec: float(-0.5*vec[chi_i])
         else:
             print("Using old loglike = {}.".format(like_column))
             if like_column not in labels:
                 raise Exception("Couldn't find column: {}.".format(like_column))
             like_i = np.where(labels == like_column)[0]
-            self._like = lambda vec: vec[like_i]
+            self._like = lambda vec: float(vec[like_i])
 
         if 'weight' in labels:
             weight_i = np.where(labels == 'weight')[0]
-            self._weight = lambda vec: vec[weight_i]
+            self._weight = lambda vec: float(vec[weight_i])
             self.weighted = True
         else:
             self._weight = lambda vec: 1.0
@@ -94,7 +117,7 @@ class Params():
     def __init__(self, filename, section):
         self.parser = self.load_ini(filename, 'params')
         self.section = section
-        
+
     def load_ini(self, filename, ini=None):
         """Loads given ini info from chain file. If ini=None, loads directly from file.ini"""
         parser = configparser.ConfigParser(strict=False)
@@ -167,17 +190,17 @@ def main():
     parser.add_argument('output', help = 'Output importance sampling weights.')
 
     parser.add_argument('--like-section', dest = 'like_section',
-                           default = '2pt_like', required = False,
-                           help = 'The 2pt_like configuration section name used in the baseline chain. (default: 2pt_like).')
+                default = '2pt_like', required = False,
+                help = 'The 2pt_like configuration section name used in the baseline chain. (default: 2pt_like).')
 
     # SJ begin
     parser.add_argument('--like-column', dest = 'like_column',
-                           default = 'like', required = False,
-                           help ='Likelihood column name in the baseline chain. (likelihoods--2pt_like if chain was run with external data sets)')
+                default = 'like', required = False,
+                                                   help ='Likelihood column name in the baseline chain. (likelihoods--2pt_like if chain was run with external data sets)')
     # SJ end
 
     parser.add_argument('--include-norm', dest = 'include_norm', action='store_true',
-                           help = 'Force include_norm option.')
+                help = 'Force include_norm option.')
 
     args = parser.parse_args()
 
@@ -210,21 +233,21 @@ def main():
 
         with open(args.output, 'w+') as output:
             # Setting the header of the output file
-            output.write('#old_like\told_weight\tnew_like\tweight\r\n')
-            output.write('#\r\n')
-            output.write('# Importance sampling weights\r\n')
-            output.write('# Chain: {}\r\n'.format(args.chain))
-            output.write('# Data vector: {}\r\n'.format(args.data_vector))
-            output.write('# Data vector size (from base chain): {}\r\n'.format(block.theory_len))
+            output.write('#old_like\told_weight\tnew_like\tweight\n')
+            output.write('#\n')
+            output.write('# Importance sampling weights\n')
+            output.write('# Chain: {}\n'.format(args.chain))
+            output.write('# Data vector: {}\n'.format(args.data_vector))
+            output.write('# Data vector size (from base chain): {}\n'.format(block.theory_len))
 
             if include_norm:
-                output.write('# Including detC factor in likelihood\r\n')
+                output.write('# Including detC factor in likelihood\n')
 
             if block.weighted:
-                output.write('# Previous weights were found and incorporated in weight column\r\n')
-            
-            loglikediff = []
-            oldweights = []
+                output.write('# Previous weights were found and incorporated in weight column\n')
+
+            log_is_weights = []
+            old_weights = []
             weights = []
 
             # Iterate through lines to compute IS weights (manually splitting lines to minimize use of RAM)
@@ -244,80 +267,51 @@ def main():
                     new_like += -0.5*like_obj.extract_covariance_log_determinant(block)
 
                 log_is_weight = new_like - block.get_like()
-                loglikediff.append(log_is_weight)
-                
-                ## Try to get ratio of likelihoods. If old likelihood is tiny, then we could be dividing two tiny numbers.
-                ## If the old chain point has essentially 0 for the weight, then set new point to 0 as well.
-                ## otherwise set to NaN 
-                # try:
-                #     likeratio = np.e**log_is_weight #change in prob
-                # except OverflowError: 
-                #     if (weight_i != -1) and vec[weight_i] < 1.e-300:
-                #         likeratio = 0
-                #     else:
-                #         likeratio = NaN
-                        
-                #avoid dividing tiny numbers
-                if (block.weighted) and block.get_weight() < 1.e-300:
-                    likeratio = 0
-                else:
-                    likeratio = np.e**log_is_weight #change in prob
-                        
-                if block.weighted:
-                    w_old = block.get_weight() #old weight from baseline chain
-                    
-                    weight = likeratio * w_old #new weight
-                    norm_fact += w_old
-                    total_is -= log_is_weight * w_old
-                else:
-                    w_old = 1.
-                    weight = likeratio * w_old #new weight
-                    norm_fact += 1
-                    total_is -= log_is_weight
 
-                oldweights.append(w_old)
+                # weight = np.exp(log_is_weight) if not (block.weighted and block.get_weight() < 1.e-300) else 0.
+                weight = np.nan_to_num(np.exp(log_is_weight))
+
+                if block.weighted:
+                    weight = np.nan_to_num(weight*block.get_weight())
+                    old_weights.append(block.get_weight())
+
+                log_is_weights.append(log_is_weight)
                 weights.append(weight)
 
-                output.write('%e\t%e\t%e\t%e\r\n' % (block.get_like(), w_old, new_like, weight))
-
-            oldweights = np.array(oldweights)
-            weights = np.array(weights)
-            loglikediff = np.array(loglikediff)
-            Nsample = len(loglikediff)
-            
-            print(oldweights.shape, loglikediff.shape)
-            loglikediff_mean = np.average(loglikediff, weights=oldweights, axis=0)
-            loglikediff_rms = np.average(loglikediff**2, weights=oldweights, axis=0)**0.5
-            
-            #calc importance sampling effective sample size.
-            weight_ratio = np.exp(loglikediff)
-            normed_weights = weight_ratio / (Nsample * np.average(weight_ratio, weights=oldweights, axis=0)) #really doing weighted sum
-            eff_sample_frac = 1./(Nsample * np.average(normed_weights**2, weights=oldweights, axis=0))
-
-            base_ess = oldweights.sum()**2/(oldweights**2).sum()
-            final_ess = weights.sum()**2/(weights**2).sum()
+                output.write('%e\t%e\t%e\t%e\n' % (block.get_like(), block.get_weight(), new_like, weight))
 
             print()
             print('Finished!')
 
+            weights = np.array(weights)
+            old_weights = np.array(old_weights) if len(old_weights) > 0 else np.ones_like(weights)
+            log_is_weights = np.array(log_is_weights)
+            Nsample = len(log_is_weights)
+
+            log_is_weights_mean = np.average(-log_is_weights, weights=old_weights)
+            log_is_weights_rms = np.average(log_is_weights**2, weights=old_weights)**0.5
+
             def write_output(line=''):
                 line = str(line)
                 print(line)
-                output.write('# ' + line + '\r\n')
+                output.write('# ' + line + '\n')
                 return line
 
-            #TODO: ESS using e^loglikediff and normalized correctly.
+            write_output('Delta loglike')
+            write_output('\tAverage: {:7n}'.format(log_is_weights_mean))
+            write_output('\tRMS:     {:7n}'.format(log_is_weights_rms))
             write_output()
-            write_output('dloglike_mean: {}'.format(-loglikediff_mean)) #this should match total_is/normfact
-            if not np.isclose(-loglikediff_mean, total_is/norm_fact, 1e-4):
-                write_output('WARNING: same quantity, but using independent calculation: {}'.format(total_is/norm_fact))
-            write_output('dloglike_rms: {}'.format(loglikediff_rms))
+            write_output('Effective sample sizes')
+
+            ESS_base = get_ess_dict(old_weights)
+            ESS_IS = get_ess_dict(weights)
+
+            for key in ESS_base.keys():
+                write_output('\t{:<30}\t{:7n}/{:7n} = {:7n}'.format(key, ESS_IS[key], ESS_base[key], ESS_IS[key]/ESS_base[key]))
+
             write_output()
-            write_output('ESS_baseline (assuming uncorrelated samples) = {}'.format(base_ess))
-            write_output('ESS_IS = {}'.format(final_ess))
-            write_output('- ratio = {}'.format(final_ess/base_ess)) # Ratio (variance inflation factor) = base_ess/final_ess
-            write_output()
-            write_output('ESS_IS_alt = {}'.format(eff_sample_frac))
+            write_output('\tTotal samples' + ' '*27 + '{}'.format(Nsample))
+
 
 if __name__ == '__main__':
     main()
