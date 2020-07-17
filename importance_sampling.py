@@ -12,6 +12,8 @@ import numpy as np
 import argparse, configparser
 import sys, os
 
+LIKE_COLUMN_PRIORITY = iter(['like', 'post', '2pt_like--chi2'])
+
 #  Imports 2pt_like module
 try:
     sys.path.append(os.environ['COSMOSIS_SRC_DIR'] + '/cosmosis-standard-library/likelihood/2pt')
@@ -21,28 +23,6 @@ except:
 
 twopointlike = __import__('2pt_like_allmarg')
 
-def get_ess_dict(weights):
-    w = weights/weights.sum()
-    N = len(w)
-
-    return {
-            'Euclidean distance': 1/(w**2).sum(), # overestimates
-            'Inverse maximum weight': 1/np.max(w), # underestimates; best when bias is large
-
-            'Gini coefficient': -2*np.sum(np.arange(1,N+1)*np.sort(w)) + 2*N + 1, # best when bias and N are small
-            'Square root sum': np.sum(np.sqrt(w))**2,
-            'Peak integrated': -N*np.sum(w[w>=1/N]) + np.sum(w>=1/N) + N,
-            'Shannon entropy': 2**(-np.sum(w[w>0]*np.log2(w[w>0]))),
-
-            # Not stable
-            # 'Maximum': N + 1 - N*np.max(w),
-            # 'Peak count': np.sum(w>=1/N),
-            # 'Minimum': N*(N - 1)*np.min(w) + 1,
-            # 'Inverse minimum': 1/((1-N)*np.min(w) + 1),
-            # 'Entropy': N - 1/np.log2(N)*(-np.sum(w[w>0]*np.log2(w[w>0]))),
-            # 'Inverse entropy': -N*np.log2(N)/(-N*np.log2(N) + (N - 1)*(-np.sum(w[w>0]*np.log2(w[w>0])))),
-            }
-
 class ImportanceSamplingLikelihood(twopointlike.TwoPointGammatMargLikelihood):
     def __init__(self, options):
         super(ImportanceSamplingLikelihood, self).__init__(options)
@@ -51,6 +31,12 @@ class Block():
     """ This class mimicks cosmosis' data block. The likelihood object reads from it."""
     def __init__(self, labels, like_column='like'):
         self.labels = labels
+
+        # if like_column not found, look for others in the LIKE_COLUMN_PRIORITY order
+        while like_column not in labels:
+            print("Couldn't find column {}.".format(like_column))
+            like_column = next(LIKE_COLUMN_PRIORITY)
+            print("Looking for {}.".format(like_column))
 
         if like_column == 'post':
             print("Using old loglike = post - prior.")
@@ -181,6 +167,28 @@ class Params():
         """defaults any unspecified methods to the ConfigParser object"""
         return getattr(self.parser, attr)
 
+def get_ess_dict(weights):
+    w = weights/weights.sum()
+    N = len(w)
+
+    return {
+            'Euclidean distance': 1/(w**2).sum(), # overestimates
+            'Inverse maximum weight': 1/np.max(w), # underestimates; best when bias is large
+
+            'Gini coefficient': -2*np.sum(np.arange(1,N+1)*np.sort(w)) + 2*N + 1, # best when bias and N are small
+            'Square root sum': np.sum(np.sqrt(w))**2,
+            'Peak integrated': -N*np.sum(w[w>=1/N]) + np.sum(w>=1/N) + N,
+            'Shannon entropy': 2**(-np.sum(w[w>0]*np.log2(w[w>0]))),
+
+            # Not stable
+            # 'Maximum': N + 1 - N*np.max(w),
+            # 'Peak count': np.sum(w>=1/N),
+            # 'Minimum': N*(N - 1)*np.min(w) + 1,
+            # 'Inverse minimum': 1/((1-N)*np.min(w) + 1),
+            # 'Entropy': N - 1/np.log2(N)*(-np.sum(w[w>0]*np.log2(w[w>0]))),
+            # 'Inverse entropy': -N*np.log2(N)/(-N*np.log2(N) + (N - 1)*(-np.sum(w[w>0]*np.log2(w[w>0])))),
+            }
+
 def main():
     # First, let's handle input arguments
     parser = argparse.ArgumentParser(description = 'This code computes importance weights for a data vector given a chain with data_vector--2pt_theory_### columns')
@@ -195,12 +203,12 @@ def main():
 
     # SJ begin
     parser.add_argument('--like-column', dest = 'like_column',
-                default = 'like', required = False,
-                                                   help ='Likelihood column name in the baseline chain. (likelihoods--2pt_like if chain was run with external data sets)')
+               default = 'like', required = False,
+               help ='Likelihood column name in the baseline chain. (likelihoods--2pt_like if chain was run with external data sets)')
     # SJ end
 
     parser.add_argument('--include-norm', dest = 'include_norm', action='store_true',
-                help = 'Force include_norm option.')
+               help = 'Force include_norm option.')
 
     args = parser.parse_args()
 
@@ -220,9 +228,17 @@ def main():
     # Gets data vector and inverse covariance from likelihood object
     data_vector = np.atleast_1d(like_obj.data_y)
 
-    include_norm = params.get_string('include_norm', default='F').lower() in ['true', 't', 'yes'] or args.include_norm
+    # include_norm is true if covariance is not fixed
+    include_norm = args.include_norm
+    include_norm = include_norm or not like_obj.constant_covariance
+    include_norm = include_norm or params.get_string('include_norm', default='F').lower() in ['true', 't', 'yes']
 
     block = Block(labels, args.like_column)
+
+    # Initialize these variables
+    covariance_matrix = None
+    precision_matrix = None
+    log_det = None
 
     total_is = 0.
     norm_fact = 0.
@@ -246,6 +262,7 @@ def main():
             if block.weighted:
                 output.write('# Previous weights were found and incorporated in weight column\n')
 
+            # We'll keep track of these quantities
             log_is_weights = []
             old_weights = []
             weights = []
@@ -257,18 +274,22 @@ def main():
 
                 block.update(np.array(line.split(), dtype=np.float64))
 
-                covariance_matrix = like_obj.extract_covariance(block)
-                precision_matrix = like_obj.extract_inverse_covariance(block)
+                # Check if covariance is set and whether we need to constantly update it
+                if not like_obj.constant_covariance or covariance_matrix is None:
+                    covariance_matrix = like_obj.extract_covariance(block)
+                    precision_matrix = like_obj.extract_inverse_covariance(block)
 
+                # Core computation
                 d = data_vector - block.get_theory()
                 new_like = -np.einsum('i,ij,j', d, precision_matrix, d)/2
 
-                if include_norm:
-                    new_like += -0.5*like_obj.extract_covariance_log_determinant(block)
+                if include_norm :
+                    # Check if log_det is set and whether we need to constantly update it
+                    if not like_obj.constant_covariance or log_det is None:
+                        log_det = like_obj.extract_covariance_log_determinant(block)
+                    new_like += -0.5*log_det
 
                 log_is_weight = new_like - block.get_like()
-
-                # weight = np.exp(log_is_weight) if not (block.weighted and block.get_weight() < 1.e-300) else 0.
                 weight = np.nan_to_num(np.exp(log_is_weight))
 
                 if block.weighted:
@@ -283,6 +304,7 @@ def main():
             print()
             print('Finished!')
 
+            # Now let's compute diagnostic stats
             weights = np.array(weights)
             old_weights = np.array(old_weights) if len(old_weights) > 0 else np.ones_like(weights)
             log_is_weights = np.array(log_is_weights)
