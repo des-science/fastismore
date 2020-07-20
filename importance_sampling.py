@@ -17,6 +17,7 @@ LIKE_COLUMN_PRIORITY = iter(['like', 'post', '2pt_like--chi2'])
 #  Imports 2pt_like module
 try:
     sys.path.append(os.environ['COSMOSIS_SRC_DIR'] + '/cosmosis-standard-library/likelihood/2pt')
+    sys.path.append(os.environ['COSMOSIS_SRC_DIR'])
 except:
     print("Failed to find COSMOSIS dir. Did you set up COSMOSIS?")
     sys.exit(1)
