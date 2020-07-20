@@ -5,6 +5,14 @@ import numpy as np
 import matplotlib.pyplot as plot
 from getdist import MCSamples, plots
 import argparse, configparser, copy
+import itertools as itt
+
+params2plot = [
+     'cosmological_parameters--omega_m',
+     'cosmological_parameters--sigma_8',
+     'cosmological_parameters--s8',
+#    'cosmological_parameters--w',
+]
 
 not_param = [
     'like',
@@ -85,13 +93,6 @@ label_dict = {
     'mag_alpha_lens--alpha_5': r'\alpha_\text{lens}^5',
 }
 
-params2plot = [
-     'cosmological_parameters--omega_m',
-     'cosmological_parameters--sigma_8',
-     'cosmological_parameters--s8',
-#    'cosmological_parameters--w',
-]
-
 param_to_label = np.vectorize(lambda param: label_dict[param] if param in label_dict else param)
 
 def load_ini(filename, ini=None):
@@ -148,7 +149,6 @@ class Chain:
         return self.data
 
     def __add_extra(self):
-
         self.data['cosmological_parameters--s8'] = \
             self.data['cosmological_parameters--sigma_8']*(self.data['cosmological_parameters--omega_m']/0.3)**0.5
 
@@ -166,8 +166,7 @@ class Chain:
 
     def get_sampler(self):
         """reads the sampler name from a given chain"""
-        params = load_ini(self.filename, 'params')
-        sampler = params.get('runtime', 'sampler')
+        sampler = self.params().get('runtime', 'sampler')
         # print("Sampler is {}".format(sampler))
         return sampler
 
@@ -188,39 +187,50 @@ class Chain:
     def get_fiducial(self, filename=None):
         """loads range values from values.ini file or chain file"""
 
-        values = load_ini(self.filename, ini='values' if filename is None else None)
-
         return {p:
-            float((lambda x: x[1] if len(x) == 3 else x[0])(values.get(*p.split('--')).split())) \
-            if values.has_option(*p.split('--')) \
+            float((lambda x: x[1] if len(x) == 3 else x[0])(self.values().get(*p.split('--')).split())) \
+            if self.values().has_option(*p.split('--')) \
             else None \
             for p in self.get_params()}
+
+    def params(self):
+        if not hasattr(self, '_params'):
+            self._params = load_ini(self.filename, ini='params')
+        return self._params
+
+    def values(self):
+        if not hasattr(self, '_values'):
+            self._values = load_ini(self.filename, ini='values')
+        return self._values
 
     def get_ranges(self, filename=None):
         """loads range values from values.ini file or chain file"""
 
-        values = load_ini(self.filename, ini='values' if filename is None else None)
-
-        return {p:
-            (lambda x: [float(x[0]), float(x[2])] if len(x) == 3 else [None, None])(values.get(*p.split('--')).split()) \
-            if values.has_option(*p.split('--')) \
+        self.ranges = {p:
+            (lambda x: [float(x[0]), float(x[2])] if len(x) == 3 else [None, None])(self.values().get(*p.split('--')).split()) \
+            if self.values().has_option(*p.split('--')) \
             else [None, None] \
             for p in self.get_params()}
 
+        return self.ranges
+
     def get_MCSamples(self, settings=None):
 
-        return MCSamples(
-            samples=self.on_params(),
-            weights=self.get_weights(),
-            #loglikes=self.get_likes(),
+        if not hasattr(self, '_mcsamples'):
+            self._mcsamples = MCSamples(
+                samples=self.on_params(),
+                weights=self.get_weights(),
+                #loglikes=self.get_likes(),
 
-            ranges=self.get_ranges(),
-            sampler='nested' if self.get_sampler() in ['multinest', 'polychord'] else 'mcmc',
+                ranges=self.get_ranges(),
+                sampler='nested' if self.get_sampler() in ['multinest', 'polychord'] else 'mcmc',
 
-            names=self.get_params(),
-            labels=[l for l in self.get_labels()],
-            settings=settings,
-        )
+                names=self.get_params(),
+                labels=[l for l in self.get_labels()],
+                settings=settings,
+            )
+
+        return self._mcsamples
 
     def get_weights(self):
         if 'weight' in self.data.keys():
@@ -348,6 +358,11 @@ class ImportanceChain(Chain):
     def get_fiducial(self, filename=None):
         return self.base.get_fiducial(filename=filename)
 
+    def get_2d_shift(self, params):
+        inv_cov = np.linalg.inv(self.base.get_MCSamples().cov(params))
+        p = self.get_mean(params) - self.base.get_mean(params)
+        return np.einsum('i,ij,j', p, inv_cov, p)
+
 def main():
     parser = argparse.ArgumentParser(description = '')
 
@@ -418,6 +433,11 @@ def main():
             for p, bm, bs, im in zip(params2plot, base_mean, base_std, is_mean):
                 output_string += '\t{:<40} {:7n}\n'.format(p, (im-bm)/bs)
 
+            output_string += '\n2D bias\n'
+            param_combinations = np.array(list())
+            for p in itt.combinations(params2plot, 2):
+                output_string += '\n\t{:<40}\n\t{:<40} {:7n}\n'.format(*p, chain.get_2d_shift(p))
+
             output_string += '\nDelta loglike\n'
             dl = chain.get_dloglike_stats()
             output_string += '\tAverage: {:7n}\n'.format(dl[0])
@@ -478,7 +498,6 @@ def main():
             text_note_1 += '\nTotal samples: {}\n'.format(chain.N)
 
             g.add_text_left(text_note_1, ax=(0,0), x=1.03, y=0.35, fontsize=7)
-
 
             base_mean, base_std = chain.base.get_mean(params2plot), chain.base.get_std(params2plot)
             is_mean, is_std = chain.get_mean(params2plot), chain.get_std(params2plot)
