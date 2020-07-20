@@ -11,6 +11,8 @@ not_param = [
     'old_like',
     'delta_loglike',
     'new_like',
+    'new_prior',
+    'new_post',
     'prior',
     'post',
     '2pt_like',
@@ -254,7 +256,7 @@ class Chain:
 
             self.ESS_dict = {
                     'Euclidean distance': 1/(w**2).sum(), # overestimates
-                    'Inverse maximum weight': 1/np.max(w), # underestimates; best when bias is large
+                    'Inverse max weight': 1/np.max(w), # underestimates; best when bias is large
 
                     'Gini coefficient': -2*np.sum(np.arange(1,N+1)*np.sort(w)) + 2*N + 1, # best when bias and N are small
                     'Square root sum': np.sum(np.sqrt(w))**2,
@@ -396,45 +398,25 @@ def main():
 
     N_IS = len(is_chains)
 
-    # Plot IS weights
-    if args.plot_weights:
-        for chain in is_chains:
-            fig, ax = plot.subplots()
-            ax.plot(chain.get_weights())
-            ax.plot(chain.base.get_weights())
-            plot.savefig('{}_{}_weights.{}'.format(args.output, chain.name, args.fig_format))
-
-    # Make triangle plot
-    if args.triangle_plot:
-        samples = []
-        settings = {'smooth_scale_1D': 0.3, 'smooth_scale_2D': 0.4} if args.classic_kde else None
-        if args.base_plot:
-            samples.append(base_chain.get_MCSamples(settings=settings))
-        samples.extend([is_chain.get_MCSamples(settings=settings) for is_chain in is_chains])
-        samples.extend([c.get_MCSamples(settings=settings) for c in extra_chains])
-
-        g = plots.getSubplotPlotter()
-
-        g.triangle_plot(
-            samples,
-            params=params2plot,
-            legend_labels=args.legend_labels,
-        )
-
-        g.export(args.output + '_triangle.' + args.fig_format)
-
     if args.stats:
         output_string = ''
         for chain in is_chains:
             output_string += '\nFile: {}\n'.format(chain.filename)
 
+            base_mean, base_std = chain.base.get_mean(params2plot), chain.base.get_std(params2plot)
+            is_mean, is_std = chain.get_mean(params2plot), chain.get_std(params2plot)
+
             output_string += '\nBaseline mean ± std\n'
-            for p,m,s in zip(params2plot, chain.base.get_mean(params2plot), chain.base.get_std(params2plot)):
+            for p,m,s in zip(params2plot, base_mean, base_std):
                 output_string += '\t{:<40} {:7n} ± {:7n}\n'.format(p, m, s)
 
             output_string += '\nImportance sampled mean ± std\n'
-            for p,m,s in zip(params2plot, chain.get_mean(params2plot), chain.get_std(params2plot)):
+            for p,m,s in zip(params2plot, is_mean, is_std):
                 output_string += '\t{:<40} {:7n} ± {:7n}\n'.format(p, m, s)
+
+            output_string += '\nDelta parameter/std\n'
+            for p, bm, bs, im in zip(params2plot, base_mean, base_std, is_mean):
+                output_string += '\t{:<40} {:7n}\n'.format(p, (im-bm)/bs)
 
             output_string += '\nDelta loglike\n'
             dl = chain.get_dloglike_stats()
@@ -453,6 +435,71 @@ def main():
             f.write(output_string)
 
         print(output_string.replace('\n', '\r\n'))
+
+    # Plot IS weights
+    if args.plot_weights:
+        for chain in is_chains:
+            fig, ax = plot.subplots()
+            ax.plot(chain.get_weights())
+            ax.plot(chain.base.get_weights())
+            plot.savefig('{}_{}_weights.{}'.format(args.output, chain.name, args.fig_format))
+
+    # Make triangle plot
+    if args.triangle_plot:
+        samples = []
+        settings = {'smooth_scale_1D': 0.3, 'smooth_scale_2D': 0.4} if args.classic_kde else None
+        samples.extend([c.get_MCSamples(settings=settings) for c in extra_chains])
+        if args.base_plot:
+            samples.append(base_chain.get_MCSamples(settings=settings))
+        samples.extend([is_chain.get_MCSamples(settings=settings) for is_chain in is_chains])
+
+        g = plots.getSubplotPlotter()
+
+        g.triangle_plot(
+            samples,
+            params=params2plot,
+            legend_labels=args.legend_labels,
+        )
+
+        # Write some stats to the triangle plot
+        if len(is_chains) == 1:
+            chain = is_chains[0]
+
+            dl = chain.get_dloglike_stats()
+            text_note_1 = 'Average delta loglike: {:n}\n'.format(dl[0])
+            text_note_1 += 'RMS delta loglike: {:n}\n'.format(dl[1])
+
+            text_note_1 += '\nEffective sample sizes\n'
+            ESS_base = chain.base.get_ESS_dict()
+            ESS_IS = chain.get_ESS_dict()
+            for key in ESS_base.keys():
+                text_note_1 += '{}: {:.0f}/{:.0f} = {:.0%}\n'.format(key, ESS_IS[key], ESS_base[key], ESS_IS[key]/ESS_base[key])
+
+            text_note_1 += '\nTotal samples: {}\n'.format(chain.N)
+
+            g.add_text_left(text_note_1, ax=(0,0), x=1.03, y=0.35, fontsize=7)
+
+
+            base_mean, base_std = chain.base.get_mean(params2plot), chain.base.get_std(params2plot)
+            is_mean, is_std = chain.get_mean(params2plot), chain.get_std(params2plot)
+
+            text_note_2 = 'Baseline mean ± std\n'
+            for p,m,s in zip(param_to_label(params2plot), base_mean, base_std):
+                text_note_2 += '${}$ {:3n} ± {:3n}\n'.format(p, m, s)
+
+            text_note_2 += '\nImportance sampled mean ± std\n'
+            for p,m,s in zip(param_to_label(params2plot), is_mean, is_std):
+                text_note_2 += '${}$ {:3n} ± {:3n}\n'.format(p, m, s)
+
+            text_note_2 += '\nDelta parameter/std\n'
+            for p, bm, bs, im in zip(param_to_label(params2plot), base_mean, base_std, is_mean):
+                text_note_2 += '${}$ {:3n}\n'.format(p, (im-bm)/bs)
+
+            #g.add_text_left(text_note_2, ax=(1,1), x=1.03, y=0.35, fontsize=7)
+            g.add_text_left(text_note_2, ax=(1,1), x=1.03, y=0.5, fontsize=7)
+
+
+        g.export(args.output + '_triangle.' + args.fig_format)
 
 if __name__ == "__main__":
     main()
