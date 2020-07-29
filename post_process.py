@@ -6,12 +6,13 @@ import matplotlib.pyplot as plot
 from getdist import MCSamples, plots
 import argparse, configparser, copy
 import itertools as itt
+import shivam_2d_bias
 
 params2plot = [
      'cosmological_parameters--omega_m',
-     'cosmological_parameters--sigma_8',
+#     'cosmological_parameters--sigma_8',
      'cosmological_parameters--s8',
-#    'cosmological_parameters--w',
+#     'cosmological_parameters--w',
 ]
 
 not_param = [
@@ -94,6 +95,7 @@ label_dict = {
 }
 
 param_to_label = np.vectorize(lambda param: label_dict[param] if param in label_dict else param)
+param_to_latex = np.vectorize(lambda param: '${}$'.format(label_dict[param]) if param in label_dict else param)
 
 def load_ini(filename, ini=None):
     """loads given ini info from chain file. If ini=None, loads directly from file.ini"""
@@ -148,21 +150,29 @@ class Chain:
         self.N = len(self.data[labels[0]])
         return self.data
 
-    def __add_extra(self):
-        self.data['cosmological_parameters--s8'] = \
-            self.data['cosmological_parameters--sigma_8']*(self.data['cosmological_parameters--omega_m']/0.3)**0.5
+    def __add_extra(self, data=None, extra=None):
+        if data == None:
+            data = self.data
 
-        self.data['cosmological_parameters--ommh2'] = \
-            self.data['cosmological_parameters--omega_m']*self.data['cosmological_parameters--h0']**2
+        if extra != None:
+            data.update(extra)
 
-        self.data['cosmological_parameters--ombh2'] = \
-            self.data['cosmological_parameters--omega_b']*self.data['cosmological_parameters--h0']**2
+        data['cosmological_parameters--s8'] = \
+            data['cosmological_parameters--sigma_8']*(data['cosmological_parameters--omega_m']/0.3)**0.5
 
-        self.data['cosmological_parameters--omch2'] = \
-            self.data['cosmological_parameters--ommh2'] - self.data['cosmological_parameters--ombh2']
+        data['cosmological_parameters--ommh2'] = \
+            data['cosmological_parameters--omega_m']*data['cosmological_parameters--h0']**2
 
-        self.data['cosmological_parameters--omega_c'] = \
-            self.data['cosmological_parameters--omega_m'] - self.data['cosmological_parameters--omega_b']
+        data['cosmological_parameters--ombh2'] = \
+            data['cosmological_parameters--omega_b']*data['cosmological_parameters--h0']**2
+
+        data['cosmological_parameters--omch2'] = \
+            data['cosmological_parameters--ommh2'] - data['cosmological_parameters--ombh2']
+
+        data['cosmological_parameters--omega_c'] = \
+            data['cosmological_parameters--omega_m'] - data['cosmological_parameters--omega_b']
+
+        return data
 
     def get_sampler(self):
         """reads the sampler name from a given chain"""
@@ -178,20 +188,25 @@ class Chain:
         else:
             raise Exception("No parameters found..")
 
-    def get_labels(self):
-        return param_to_label(self.get_params())
+    def get_labels(self, params=None):
+        if params == None:
+            return param_to_label(self.get_params())
+        else:
+            return param_to_label(params)
 
     def on_params(self):
         return np.array([self.data[l] for l in self.get_params()]).T
 
-    def get_fiducial(self, filename=None):
+    def get_fiducial(self, filename=None, extra=None):
         """loads range values from values.ini file or chain file"""
 
-        return {p:
+        fiducial = {p:
             float((lambda x: x[1] if len(x) == 3 else x[0])(self.values().get(*p.split('--')).split())) \
             if self.values().has_option(*p.split('--')) \
             else None \
             for p in self.get_params()}
+
+        return self.__add_extra(fiducial, extra)
 
     def params(self):
         if not hasattr(self, '_params'):
@@ -355,8 +370,8 @@ class ImportanceChain(Chain):
     def on_params(self):
         return self.base.on_params()
 
-    def get_fiducial(self, filename=None):
-        return self.base.get_fiducial(filename=filename)
+    def get_fiducial(self, *args, **kwargs):
+        return self.base.get_fiducial(*args, **kwargs)
 
     def get_2d_shift(self, params):
         inv_cov = np.linalg.inv(self.base.get_MCSamples().cov(params))
@@ -386,6 +401,9 @@ def main():
     parser.add_argument('--stats', dest = 'stats', action='store_true',
                     help = 'compute importance sampling statistics.')
 
+    parser.add_argument('--shift-2d', dest = 'shift_2d', action='store_true',
+                    help = "compute 2d bias using Shivam's code.")
+
     parser.add_argument('--all', dest = 'all', action='store_true',
                     help = 'same as --stats --triangle-plot --base-plot.')
 
@@ -397,7 +415,6 @@ def main():
 
     parser.add_argument('--legend-labels', dest = 'legend_labels', nargs='*', required = False,
                     help = 'Label chains in the triangle plot.')
-
 
     args = parser.parse_args()
 
@@ -468,10 +485,10 @@ def main():
     if args.triangle_plot:
         samples = []
         settings = {'smooth_scale_1D': 0.3, 'smooth_scale_2D': 0.4} if args.classic_kde else None
-        samples.extend([c.get_MCSamples(settings=settings) for c in extra_chains])
         if args.base_plot:
             samples.append(base_chain.get_MCSamples(settings=settings))
         samples.extend([is_chain.get_MCSamples(settings=settings) for is_chain in is_chains])
+        samples.extend([c.get_MCSamples(settings=settings) for c in extra_chains])
 
         g = plots.getSubplotPlotter()
 
@@ -497,7 +514,7 @@ def main():
 
             text_note_1 += '\nTotal samples: {}\n'.format(chain.N)
 
-            g.add_text_left(text_note_1, ax=(0,0), x=1.03, y=0.35, fontsize=7)
+#            g.add_text_left(text_note_1, ax=(0,0), x=1.03, y=0.35, fontsize=7)
 
             base_mean, base_std = chain.base.get_mean(params2plot), chain.base.get_std(params2plot)
             is_mean, is_std = chain.get_mean(params2plot), chain.get_std(params2plot)
@@ -515,10 +532,28 @@ def main():
                 text_note_2 += '${}$ {:3n}\n'.format(p, (im-bm)/bs)
 
             #g.add_text_left(text_note_2, ax=(1,1), x=1.03, y=0.35, fontsize=7)
-            g.add_text_left(text_note_2, ax=(1,1), x=1.03, y=0.5, fontsize=7)
-
+            #g.add_text_left(text_note_2, ax=(1,1), x=1.03, y=0.5, fontsize=7)
 
         g.export(args.output + '_triangle.' + args.fig_format)
+
+    if args.shift_2d:
+        output_string = '\n2D shifts\n'
+        for is_chain in is_chains:
+            output_string += '\nFile: {}\n'.format(is_chain.filename)
+            for p in itt.combinations(params2plot, 2):
+                shifts = shivam_2d_bias.compute_2d_bias(base_chain.get_MCSamples(), is_chain.get_MCSamples(),
+                        base_chain.get_fiducial(extra={'cosmological_parameters--sigma_8': 0.8430599612}),
+                        *p, *param_to_latex(p), 0.01,
+                        '{}_{}_{}_{}_2d_bias.{}'.format(args.output, is_chain.filename.split('/')[-1], *p, args.fig_format))
+
+                output_string += '\n\t{}\n\t{}\n'.format(*p)
+                for s in shifts.keys():
+                    output_string += '\n\t\t{:<30}: {:3n}'.format(s, shifts[s])
+
+            with open('{}_{}_{}_{}_2d_bias.txt'.format(args.output, is_chain.filename.split('/')[-1], *p), 'w') as f:
+                f.write(output_string)
+
+        print(output_string.replace('\n', '\r\n'))
 
 if __name__ == "__main__":
     main()
