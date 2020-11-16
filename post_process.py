@@ -7,12 +7,37 @@ from getdist import MCSamples, plots
 import argparse, configparser, copy
 import itertools as itt
 import shivam_2d_bias
+from chainconsumer import ChainConsumer
 
 params2plot = [
-     'cosmological_parameters--omega_m',
-#     'cosmological_parameters--sigma_8',
-     'cosmological_parameters--s8',
-#     'cosmological_parameters--w',
+    'cosmological_parameters--omega_m',
+#    'cosmological_parameters--s8',
+#    'cosmological_parameters--w',
+    'cosmological_parameters--sigma_8',
+#    'cosmological_parameters--h0',
+#    'cosmological_parameters--omega_b',
+#    'cosmological_parameters--n_s',
+#    'cosmological_parameters--a_s',
+#    'shear_calibration_parameters--m1',
+#    'shear_calibration_parameters--m2',
+#    'shear_calibration_parameters--m3',
+#    'shear_calibration_parameters--m4',
+#    'lens_photoz_errors--bias_1',
+#    'lens_photoz_errors--bias_2',
+#    'lens_photoz_errors--bias_3',
+#    'lens_photoz_errors--bias_4',
+#    'lens_photoz_errors--bias_5',
+#    'bias_lens--b1',
+#    'bias_lens--b2',
+#    'bias_lens--b3',
+#    'bias_lens--b4',
+#    'bias_lens--b5',
+#    'intrinsic_alignment_parameters--a1',
+#    'intrinsic_alignment_parameters--a2',
+#    'intrinsic_alignment_parameters--alpha1',
+#    'intrinsic_alignment_parameters--alpha2',
+#    'intrinsic_alignment_parameters--bias_ta'
+
 ]
 
 not_param = [
@@ -194,8 +219,8 @@ class Chain:
         else:
             return param_to_label(params)
 
-    def on_params(self):
-        return np.array([self.data[l] for l in self.get_params()]).T
+    def on_params(self, params2plot=None):
+        return np.array([self.data[l] for l in (self.get_params() if params2plot == None else params2plot)]).T
 
     def get_fiducial(self, filename=None, extra=None):
         """loads range values from values.ini file or chain file"""
@@ -340,8 +365,8 @@ class ImportanceChain(Chain):
     def get_mean(self, params):
         return self.get_MCSamples().mean(params)
 
-    def on_params(self):
-        return self.base.on_params()
+    def on_params(self, *args, **kwargs):
+        return self.base.on_params(*args, **kwargs)
 
     def get_likes(self):
         return self.data['new_like']
@@ -366,9 +391,6 @@ class ImportanceChain(Chain):
 
     def get_labels(self):
         return self.base.get_labels()
-
-    def on_params(self):
-        return self.base.on_params()
 
     def get_fiducial(self, *args, **kwargs):
         return self.base.get_fiducial(*args, **kwargs)
@@ -401,6 +423,12 @@ def main():
     parser.add_argument('--stats', dest = 'stats', action='store_true',
                     help = 'compute importance sampling statistics.')
 
+    parser.add_argument('--markdown-stats', dest = 'markdown_stats', action='store_true',
+                    help = 'output short summary in markdown.')
+
+    parser.add_argument('--summary', dest = 'summary', action='store_true',
+                    help = 'do summary plot.')
+
     parser.add_argument('--shift-2d', dest = 'shift_2d', action='store_true',
                     help = "compute 2d bias using Shivam's code.")
 
@@ -413,8 +441,8 @@ def main():
     parser.add_argument('--extra-chains', dest = 'extra_chains', nargs='*', required = False,
                     help = 'Use this to include more chains in the plots.')
 
-    parser.add_argument('--legend-labels', dest = 'legend_labels', nargs='*', required = False,
-                    help = 'Label chains in the triangle plot.')
+    parser.add_argument('--labels', dest = 'labels', nargs='*', required = False,
+                    help = 'IS chain labels.')
 
     args = parser.parse_args()
 
@@ -422,7 +450,7 @@ def main():
         args.stats = True
         args.triangle_plot = True
         args.base_plot = True
-        args.plot_weights = True
+        args.markdown_stats = True
 
     base_chain = Chain(args.chain)
     is_chains = [ImportanceChain(iw_filename, base_chain) for i, iw_filename in enumerate(args.importance_weights)]
@@ -433,6 +461,9 @@ def main():
     if args.stats:
         output_string = ''
         for chain in is_chains:
+            ESS_base = chain.base.get_ESS_dict()
+            ESS_IS = chain.get_ESS_dict()
+
             output_string += '\nFile: {}\n'.format(chain.filename)
 
             base_mean, base_std = chain.base.get_mean(params2plot), chain.base.get_std(params2plot)
@@ -446,9 +477,9 @@ def main():
             for p,m,s in zip(params2plot, is_mean, is_std):
                 output_string += '\t{:<40} {:7n} ± {:7n}\n'.format(p, m, s)
 
-            output_string += '\nDelta parameter/std\n'
+            output_string += '\nDelta parameter/std ± 1/sqrt(ESS)\n'
             for p, bm, bs, im in zip(params2plot, base_mean, base_std, is_mean):
-                output_string += '\t{:<40} {:7n}\n'.format(p, (im-bm)/bs)
+                output_string += '\t{:<40} {:7n} ± {:7n}\n'.format(p, (im-bm)/bs, 1/np.sqrt(ESS_IS['Euclidean distance']))
 
             output_string += '\n2D bias\n'
             param_combinations = np.array(list())
@@ -461,8 +492,6 @@ def main():
             output_string += '\tRMS:     {:7n}\n'.format(dl[1])
 
             output_string += '\nEffective sample sizes\n'
-            ESS_base = chain.base.get_ESS_dict()
-            ESS_IS = chain.get_ESS_dict()
             for key in ESS_base.keys():
                 output_string += '\t{:<30}\t{:7n}/{:7n} = {:7n}\n'.format(key, ESS_IS[key], ESS_base[key], ESS_IS[key]/ESS_base[key])
 
@@ -495,7 +524,7 @@ def main():
         g.triangle_plot(
             samples,
             params=params2plot,
-            legend_labels=args.legend_labels,
+            legend_labels=['Baseline'] + args.labels if args.base_plot else args.labels
         )
 
         # Write some stats to the triangle plot
@@ -554,6 +583,35 @@ def main():
                 f.write(output_string)
 
         print(output_string.replace('\n', '\r\n'))
+
+    if args.markdown_stats:
+        pairs = list(itt.combinations(params2plot, 2))
+        output_string = '\pagenumbering{gobble}\n\n'
+        output_string += '| | ' + '| '.join(['$\Delta {}/\sigma$'.format(param_to_label(p)) for p in params2plot]) + ' | ' + ('| '.join(['2D bias ${} \\times {}$'.format(*param_to_label(p)) for p in pairs]) if len(pairs) > 1 else '2D bias') + ' |\n'
+        output_string += '| -: |' + ' :-: |'*(len(params2plot)+1 + len(pairs)) + '\n'
+        for chain, label in zip(is_chains, args.labels):
+            ESS_base = chain.base.get_ESS_dict()
+            ESS_IS = chain.get_ESS_dict()
+
+            base_mean, base_std = chain.base.get_mean(params2plot), chain.base.get_std(params2plot)
+            is_mean, is_std = chain.get_mean(params2plot), chain.get_std(params2plot)
+
+            biases_1d = (is_mean - base_mean)/base_std
+            error_1d = 1/np.sqrt(ESS_IS['Euclidean distance'])
+            biases_2d = ['${:.3f}$'.format(chain.get_2d_shift(p)) for p in pairs]
+
+            output_string += '| {} | '.format(label) + ' |'.join(['${:+.3f} \\pm {:.3f}$'.format(b, error_1d) for b in biases_1d]) + ' | ' + ' |'.join(biases_2d) + ' |\n'
+
+        with open(args.output + '_stats.md', 'w') as f:
+            f.write(output_string)
+
+    if args.summary:
+        chains = [base_chain]
+        chains.extend(is_chains)
+        c = ChainConsumer()
+        for i, chain in zip(range(len(chains)), chains):
+            c.add_chain(chain.on_params(params2plot), parameters=param_to_latex(params2plot).tolist(), weights=chain.get_weights(), name='chain{}'.format(i))
+        c.plotter.plot_summary(errorbar=True, truth='chain0', include_truth_chain=True, filename='{}_summary.{}'.format(args.output, args.fig_format))
 
 if __name__ == "__main__":
     main()
