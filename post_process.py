@@ -155,13 +155,18 @@ def load_ini(filename, ini=None):
 class Chain:
     """Description: Generic chain object"""
 
-    def __init__(self, filename):
+    def __init__(self, filename, boosted=False):
         self.filename = filename
         self.name = '.'.join(filename.split('/')[-1].split('.')[:-1])
-        self.load_data()
+        self.chaindir = '/'.join(filename.split('/')[:-1])
+        self.filename_boosted = self.chaindir + '/pcfiles/pc' + self.name[5:] + '_.txt' #go to pcfiles subdir and drop 'chain' from beginning of name
+        if boosted:
+            self.load_boosted_data()
+        else:
+            self.load_data()
         self.__add_extra()
 
-    def load_data(self):
+    def load_data(self, boosted=False):
         data = []
         with open(self.filename) as f:
             labels = np.array(f.readline()[1:-1].lower().split())
@@ -175,6 +180,33 @@ class Chain:
         self.N = len(self.data[labels[0]])
         return self.data
 
+    def load_boosted_data(self):
+        """load and store data from the polychord output chain (which includes more samples if it was run with boost_posteriors=T) instead of the cosmosis chain.
+        Retrieved using `self.filename_boosted`, which by default is at './pcfiles/pc_[cosmosis chain filename]_.txt' relative to the cosmosis chain referenced in self.filename. """
+        data = []
+        with open(self.filename) as f: ##get labels and mask from cosmosis chain output
+            labels_cosmosis = np.array(f.readline()[1:-1].lower().split())
+            mask_cosmosis = ["data_vector" not in l for l in labels_cosmosis] #for size reasons, don't load data_vector terms
+            mask_cosmosis_params = [("data_vector" not in l) and (l not in ['weight', 'like', 'prior', 'post']) for l in labels_cosmosis]
+            mask_cosmosis_params_dv = [l not in ['weight', 'like', 'prior', 'post'] for l in labels_cosmosis]
+            
+            labels_pc = np.array(['weight', 'like'] + list(labels_cosmosis[mask_cosmosis_params_dv]) + ['prior']) #order of columns in PC output files
+            mask_pc = ["data_vector" not in l for l in labels_pc]
+        # boosted_data = np.genfromtxt(self.filename_boosted)[:,:] #array too large
+        
+        with open(self.filename_boosted) as f:
+            for line in f.readlines():
+                if '#' in line:
+                    continue
+                else:
+                    data.append(np.array(line.split(), dtype=np.double)[mask_pc])
+        
+        self.data = {labels_pc[mask_pc][i].lower(): col for i, col in enumerate(np.array(data).T)}
+        self.data['like'] = -0.5 * self.data['like'] # PC originally stores -2*loglike, change to just loglike to match cosmosis
+        self.data['post'] = self.data['prior'] + self.data['like']
+        self.N = len(self.data[labels_pc[0]])
+        return self.data
+ 
     def __add_extra(self, data=None, extra=None):
         if data == None:
             data = self.data
