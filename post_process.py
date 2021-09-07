@@ -475,6 +475,9 @@ def main():
 
     parser.add_argument('--labels', dest = 'labels', nargs='*', required = False,
                     help = 'IS chain labels.')
+    
+    parser.add_argument('--boosted', dest = 'boosted',  action='store_true',
+                    help = 'Load the baseline chain from the polychord output files rather than cosmosis output (useful if boost_posterior=T).')
 
     args = parser.parse_args()
 
@@ -484,7 +487,7 @@ def main():
         args.base_plot = True
         args.markdown_stats = True
 
-    base_chain = Chain(args.chain)
+    base_chain = Chain(args.chain, args.boosted)
     is_chains = [ImportanceChain(iw_filename, base_chain) for i, iw_filename in enumerate(args.importance_weights)]
     extra_chains = [Chain(f) for f in args.extra_chains] if args.extra_chains else []
 
