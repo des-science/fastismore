@@ -190,6 +190,51 @@ def get_ess_dict(weights):
             # 'Inverse entropy': -N*np.log2(N)/(-N*np.log2(N) + (N - 1)*(-np.sum(w[w>0]*np.log2(w[w>0])))),
             }
 
+def pc_to_cosmosis_sample(pc_sample_list, cosmosis_labels):
+    """ Pass row from polychord chain and return in cosmosis format.
+    pc file cols are: weight, minus2like, [all params], prior
+    Cosmosis cols are (usually): [all params], prior, like, post, weight.
+    """
+    #make sure cosmosis has all the column labels we are assuming
+    for label in ['prior', 'like', 'post', 'weight']:
+        assert label in cosmosis_labels, label
+#     print(pc_sample_list)
+    pc_sample_list = np.float64(pc_sample_list)
+    like = -0.5*pc_sample_list[1]
+    prior = pc_sample_list[-1]
+    post = prior + like
+    weight = pc_sample_list[0]
+    
+    cosmosis_sample_list = list(pc_sample_list[2:]) + [like, post, weight]
+    return cosmosis_sample_list
+            
+def load_boosted_data(cosmosis_chain_fn):
+    """load and store data from the polychord output chain (which includes more samples if it was run with boost_posteriors=T) instead of the cosmosis chain.
+    Retrieved using `self.filename_boosted`, which by default is at './pcfiles/pc_[cosmosis chain filename]_.txt' relative to the cosmosis chain referenced in self.filename. """
+    data = []
+    with open(cosmosis_chain_fn) as f: ##get labels and mask from cosmosis chain output
+        labels_cosmosis = np.array(f.readline()[1:-1].lower().split())
+        mask_cosmosis = ["data_vector" not in l for l in labels_cosmosis] #for size reasons, don't load data_vector terms
+        mask_cosmosis_params = [("data_vector" not in l) and (l not in ['weight', 'like', 'prior', 'post']) for l in labels_cosmosis]
+        mask_cosmosis_params_dv = [l not in ['weight', 'like', 'prior', 'post'] for l in labels_cosmosis]
+
+        labels_pc = np.array(['weight', 'like'] + list(labels_cosmosis[mask_cosmosis_params_dv]) + ['prior']) #order of columns in PC output files
+        mask_pc = ["data_vector" not in l for l in labels_pc]
+    # boosted_data = np.genfromtxt(self.filename_boosted)[:,:] #array too large
+
+    with open(self.filename_boosted) as f:
+        for line in f.readlines():
+            if '#' in line:
+                continue
+            else:
+                data.append(np.array(line.split(), dtype=np.double)[mask_pc])
+
+    self.data = {labels_pc[mask_pc][i].lower(): col for i, col in enumerate(np.array(data).T)}
+    self.data['like'] = -0.5 * self.data['like'] # PC originally stores -2*loglike, change to just loglike to match cosmosis
+    self.data['post'] = self.data['prior'] + self.data['like']
+    self.N = len(self.data[labels_pc[0]])
+    return self.data
+
 def main():
     # First, let's handle input arguments
     parser = argparse.ArgumentParser(description = 'This code computes importance weights for a data vector given a chain with data_vector--2pt_theory_### columns')
@@ -210,6 +255,9 @@ def main():
 
     parser.add_argument('--include-norm', dest = 'include_norm', action='store_true',
                help = 'Force include_norm option.')
+    #NW
+    parser.add_argument('--pc-chain-fn', dest = 'pc_chain_fn', required = False,
+                    help = 'Optional filepath to the polychord chain output. If included, load the baseline chain from the polychord output files rather than cosmosis output (useful if boost_posterior=T).')
 
     args = parser.parse_args()
 
@@ -246,14 +294,22 @@ def main():
 
     print('Evaluating likelihoods...')
 
-    with open(args.chain) as f:
+    #
+    if args.pc_chain_fn:
+        samples_fn = args.pc_chain_fn
+        with open(args.chain) as f: #get lables from cosmosis chain.
+            cosmosis_labels = np.array(f.readline()[1:-1].lower().split())
+    else:
+        samples_fn = args.chain
+        
+    with open(samples_fn) as f:
 
         with open(args.output, 'w+') as output:
             # Setting the header of the output file
             output.write('#old_like\told_weight\tnew_like\tweight\n')
             output.write('#\n')
             output.write('# Importance sampling weights\n')
-            output.write('# Chain: {}\n'.format(args.chain))
+            output.write('# Chain: {}\n'.format(samples_fn))
             output.write('# Data vector: {}\n'.format(args.data_vector))
             output.write('# Data vector size (from base chain): {}\n'.format(block.theory_len))
 
@@ -269,11 +325,11 @@ def main():
             weights = []
 
             # Iterate through lines to compute IS weights (manually splitting lines to minimize use of RAM)
-            for line in f:
+            for ii,line in enumerate(f):
                 if line[0] == '#':
                     continue
-
-                block.update(np.array(line.split(), dtype=np.float64))
+                mysample = line.split() if not args.pc_chain_fn else pc_to_cosmosis_sample(line.split(), cosmosis_labels)
+                block.update(np.array(mysample, dtype=np.float64))
 
                 # Check if covariance is set and whether we need to constantly update it
                 if not like_obj.constant_covariance or covariance_matrix is None:
@@ -301,7 +357,8 @@ def main():
                 weights.append(weight)
 
                 output.write('%e\t%e\t%e\t%e\n' % (block.get_like(), block.get_weight(), new_like, weight))
-
+                if ii%10000==0:
+                    print('{} evals done...'.format(ii))
             print()
             print('Finished!')
 
