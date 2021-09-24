@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 #
-# author: Otavio Alves
+# author: Otavio Alves, Noah Weaverdyck
 #
 # description: This code computes importance weights for a data vector given a
 # chain with data_vector--2pt_theory_### columns
@@ -235,7 +235,7 @@ def load_boosted_data(cosmosis_chain_fn):
     self.N = len(self.data[labels_pc[0]])
     return self.data
 
-def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2pt_like', like_column='like', include_norm=False, pc_chain_fn=None):
+def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2pt_like', like_column='like', include_norm=False, pc_chain_fn=None, max_samples=1e9):
     """This code computes importance weights for a data vector given a chain with data_vector--2pt_theory_### columns. It saves an output file with weights and likelihoods for samples of both the baseline (old) and importance sampled (new) chains.
     
     Parameters:
@@ -246,6 +246,7 @@ def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2p
     like_column (str): Likelihood column name in the baseline chain. (likelihoods--2pt_like if chain was run with external data sets)
     include_norm (bool): Force inclusion of the covariance norm in likelihood evaluation (default=False)
     pc_chain_fn (str): Optional filepath to the polychord chain output. If included, load the baseline chain from the polychord output files rather than cosmosis output (useful if boost_posterior=T).
+    max_samples (int): Max number of samples to run (useful for debugging). Default 1e9.
 
     Returns:
     dict: Containing keys 'old_weights', 'new_weights', 'old_likes', 'new_likes'
@@ -275,9 +276,9 @@ def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2p
     block = Block(labels, like_column)
 
     # Initialize these variables
-    covariance_matrix = None
     precision_matrix = None
-    log_det = None
+#     log_det = None
+    _, log_det_orig = np.linalg.slogdet(like_obj.cov_orig)
 
     total_is = 0.
     norm_fact = 0.
@@ -324,8 +325,9 @@ def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2p
                 block.update(np.array(mysample, dtype=np.float64))
 
                 # Check if covariance is set and whether we need to constantly update it
-                if not like_obj.constant_covariance or covariance_matrix is None:
-                    covariance_matrix = like_obj.extract_covariance(block)
+                if not like_obj.constant_covariance or precision_matrix is None:
+#                     covariance_matrix = like_obj.extract_covariance(block) #slow. recomputes cholesky of cov_orig each time
+#                     covariance_matrix = (like_obj.cov_orig)[:]
                     precision_matrix = like_obj.extract_inverse_covariance(block)
 
                 # Core computation
@@ -334,8 +336,12 @@ def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2p
 
                 if include_norm :
                     # Check if log_det is set and whether we need to constantly update it
-                    if not like_obj.constant_covariance or log_det is None:
-                        log_det = like_obj.extract_covariance_log_determinant(block)
+                    if not like_obj.constant_covariance:
+                        log_det = log_det_orig + like_obj.logdet_fac
+#                         log_det = like_obj.extract_covariance_log_determinant(block)
+                    else:
+                        log_det = log_det_orig
+                        
                     new_like += -0.5*log_det
 
                 old_like = block.get_like()
@@ -355,6 +361,10 @@ def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2p
                 output.write('%e\t%e\t%e\t%e\n' % (old_like, old_weight, new_like, weight))
                 if ii%10000==0:
                     print('{} evals done...'.format(ii))
+                if ii>max_samples:
+                    print('Reached max samples passed by user ({})'.format(max_samples))
+                    output.write('Halted because reached max samples passed by user: {}'.format(max_samples))
+                    break
             print()
             print('Finished!')
 
@@ -387,7 +397,7 @@ def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2p
 
             write_output()
             write_output('\tTotal samples' + ' '*27 + '{}'.format(Nsample))
-            return {'old_weights':old_weights, 'new_weights':weights, 'old_like':np.array(old_likes), 'new_likes'=np.array(new_likes)}
+            return {'old_weights':old_weights, 'new_weights':weights, 'old_like':np.array(old_likes), 'new_likes':np.array(new_likes)}
 
 if __name__ == '__main__':
     # First, let's handle input arguments
@@ -413,6 +423,9 @@ if __name__ == '__main__':
     parser.add_argument('--pc-chain-fn', dest = 'pc_chain_fn', required = False,
                     help = 'Optional filepath to the polychord chain output. If included, load the baseline chain from the polychord output files rather than cosmosis output (useful if boost_posterior=T).')
 
+    parser.add_argument('--max-samples', dest = 'max_samples', type=int, default = 999999999, required = False,
+               help = 'Max number of samples before exiting (for debugging purposes).')
+    
     args = parser.parse_args()
     
     
@@ -421,4 +434,5 @@ if __name__ == '__main__':
                       like_section=args.like_section,
                       like_column=args.like_column,
                       output_fn = args.output,
-                      pc_chain_fn=args.pc_chain_fn)
+                      pc_chain_fn=args.pc_chain_fn,
+                      max_samples=args.max_samples)
