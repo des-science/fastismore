@@ -235,41 +235,31 @@ def load_boosted_data(cosmosis_chain_fn):
     self.N = len(self.data[labels_pc[0]])
     return self.data
 
-def main():
-    # First, let's handle input arguments
-    parser = argparse.ArgumentParser(description = 'This code computes importance weights for a data vector given a chain with data_vector--2pt_theory_### columns')
+def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2pt_like', like_column='like', include_norm=False, pc_chain_fn=None):
+    """This code computes importance weights for a data vector given a chain with data_vector--2pt_theory_### columns. It saves an output file with weights and likelihoods for samples of both the baseline (old) and importance sampled (new) chains.
+    
+    Parameters:
+    bl_chain_fn (str): Base chain filename
+    data_vector_file (str): Data vector filename
+    output_fn (str): Filename of output with new likelihoods and weights
+    like_section (str): The 2pt_like configuration section name used in the baseline chain. (default: 2pt_like).
+    like_column (str): Likelihood column name in the baseline chain. (likelihoods--2pt_like if chain was run with external data sets)
+    include_norm (bool): Force inclusion of the covariance norm in likelihood evaluation (default=False)
+    pc_chain_fn (str): Optional filepath to the polychord chain output. If included, load the baseline chain from the polychord output files rather than cosmosis output (useful if boost_posterior=T).
 
-    parser.add_argument('chain', help = 'Base chain filename.')
-    parser.add_argument('data_vector', help = 'Data vector filename.')
-    parser.add_argument('output', help = 'Output importance sampling weights.')
-
-    parser.add_argument('--like-section', dest = 'like_section',
-                default = '2pt_like', required = False,
-                help = 'The 2pt_like configuration section name used in the baseline chain. (default: 2pt_like).')
-
-    # SJ begin
-    parser.add_argument('--like-column', dest = 'like_column',
-               default = 'like', required = False,
-               help ='Likelihood column name in the baseline chain. (likelihoods--2pt_like if chain was run with external data sets)')
-    # SJ end
-
-    parser.add_argument('--include-norm', dest = 'include_norm', action='store_true',
-               help = 'Force include_norm option.')
-    #NW
-    parser.add_argument('--pc-chain-fn', dest = 'pc_chain_fn', required = False,
-                    help = 'Optional filepath to the polychord chain output. If included, load the baseline chain from the polychord output files rather than cosmosis output (useful if boost_posterior=T).')
-
-    args = parser.parse_args()
+    Returns:
+    dict: Containing keys 'old_weights', 'new_weights', 'old_likes', 'new_likes'
+    """
 
     # Load labels from chain file
-    with open(args.chain) as f:
+    with open(bl_chain_fn) as f:
         labels = np.array(f.readline()[1:-1].lower().split())
 
     # Loads params from chain file header
-    params = Params(args.chain, args.like_section)
+    params = Params(bl_chain_fn, like_section)
 
     # Sets data file to the specified one
-    params.set(args.like_section, 'data_file', args.data_vector)
+    params.set(like_section, 'data_file', data_vector_file)
 
     # Loads the likelihood object building the data vector and covariance
     like_obj = ImportanceSamplingLikelihood(params)
@@ -278,11 +268,11 @@ def main():
     data_vector = np.atleast_1d(like_obj.data_y)
 
     # include_norm is true if covariance is not fixed
-    include_norm = args.include_norm
+#     include_norm = args.include_norm
     include_norm = include_norm or not like_obj.constant_covariance
     include_norm = include_norm or params.get_string('include_norm', default='F').lower() in ['true', 't', 'yes']
 
-    block = Block(labels, args.like_column)
+    block = Block(labels, like_column)
 
     # Initialize these variables
     covariance_matrix = None
@@ -295,22 +285,22 @@ def main():
     print('Evaluating likelihoods...')
 
     #
-    if args.pc_chain_fn:
-        samples_fn = args.pc_chain_fn
-        with open(args.chain) as f: #get lables from cosmosis chain.
+    if pc_chain_fn:
+        samples_fn = pc_chain_fn
+        with open(bl_chain_fn) as f: #get lables from cosmosis chain.
             cosmosis_labels = np.array(f.readline()[1:-1].lower().split())
     else:
-        samples_fn = args.chain
+        samples_fn = bl_chain_fn
         
     with open(samples_fn) as f:
 
-        with open(args.output, 'w+') as output:
+        with open(output_fn, 'w+') as output:
             # Setting the header of the output file
             output.write('#old_like\told_weight\tnew_like\tweight\n')
             output.write('#\n')
             output.write('# Importance sampling weights\n')
             output.write('# Chain: {}\n'.format(samples_fn))
-            output.write('# Data vector: {}\n'.format(args.data_vector))
+            output.write('# Data vector: {}\n'.format(data_vector_file))
             output.write('# Data vector size (from base chain): {}\n'.format(block.theory_len))
 
             if include_norm:
@@ -323,12 +313,14 @@ def main():
             log_is_weights = []
             old_weights = []
             weights = []
+            old_likes = []
+            new_likes = []
 
             # Iterate through lines to compute IS weights (manually splitting lines to minimize use of RAM)
             for ii,line in enumerate(f):
                 if line[0] == '#':
                     continue
-                mysample = line.split() if not args.pc_chain_fn else pc_to_cosmosis_sample(line.split(), cosmosis_labels)
+                mysample = line.split() if not pc_chain_fn else pc_to_cosmosis_sample(line.split(), cosmosis_labels)
                 block.update(np.array(mysample, dtype=np.float64))
 
                 # Check if covariance is set and whether we need to constantly update it
@@ -346,17 +338,21 @@ def main():
                         log_det = like_obj.extract_covariance_log_determinant(block)
                     new_like += -0.5*log_det
 
-                log_is_weight = new_like - block.get_like()
+                old_like = block.get_like()
+                old_weight = block.get_weight()
+                log_is_weight = new_like - old_like
                 weight = np.nan_to_num(np.exp(log_is_weight))
 
                 if block.weighted:
-                    weight = np.nan_to_num(weight*block.get_weight())
-                    old_weights.append(block.get_weight())
+                    weight = np.nan_to_num(weight*old_weight) #new weighting for sample
+                    old_weights.append(old_weight)
 
                 log_is_weights.append(log_is_weight)
                 weights.append(weight)
+                old_likes.append(old_like)
+                new_likes.append(new_like)
 
-                output.write('%e\t%e\t%e\t%e\n' % (block.get_like(), block.get_weight(), new_like, weight))
+                output.write('%e\t%e\t%e\t%e\n' % (old_like, old_weight, new_like, weight))
                 if ii%10000==0:
                     print('{} evals done...'.format(ii))
             print()
@@ -391,7 +387,38 @@ def main():
 
             write_output()
             write_output('\tTotal samples' + ' '*27 + '{}'.format(Nsample))
-
+            return {'old_weights':old_weights, 'new_weights':weights, 'old_like':np.array(old_likes), 'new_likes'=np.array(new_likes)}
 
 if __name__ == '__main__':
-    main()
+    # First, let's handle input arguments
+    parser = argparse.ArgumentParser(description = 'This code computes importance weights for a data vector given a chain with data_vector--2pt_theory_### columns')
+
+    parser.add_argument('chain', help = 'Base chain filename.')
+    parser.add_argument('data_vector', help = 'Data vector filename.')
+    parser.add_argument('output', help = 'Output importance sampling weights.')
+
+    parser.add_argument('--like-section', dest = 'like_section',
+                default = '2pt_like', required = False,
+                help = 'The 2pt_like configuration section name used in the baseline chain. (default: 2pt_like).')
+
+    # SJ begin
+    parser.add_argument('--like-column', dest = 'like_column',
+               default = 'like', required = False,
+               help ='Likelihood column name in the baseline chain. (likelihoods--2pt_like if chain was run with external data sets)')
+    # SJ end
+
+    parser.add_argument('--include-norm', dest = 'include_norm', action='store_true',
+               help = 'Force include_norm option.')
+    #NW
+    parser.add_argument('--pc-chain-fn', dest = 'pc_chain_fn', required = False,
+                    help = 'Optional filepath to the polychord chain output. If included, load the baseline chain from the polychord output files rather than cosmosis output (useful if boost_posterior=T).')
+
+    args = parser.parse_args()
+    
+    
+    importance_sample(bl_chain_fn=args.chain, 
+                      data_vector_file=args.data_vector, 
+                      like_section=args.like_section,
+                      like_column=args.like_column,
+                      output_fn = args.output,
+                      pc_chain_fn=args.pc_chain_fn)
