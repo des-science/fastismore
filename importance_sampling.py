@@ -77,6 +77,8 @@ class Block():
         else:
             self.theory_len = theory_i.sum()
             self._theory = lambda vec: vec[theory_i]
+            
+        self.like_column = like_column
         ## NW end
 
         return
@@ -303,7 +305,7 @@ def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2p
             output.write('# Chain: {}\n'.format(samples_fn))
             output.write('# Data vector: {}\n'.format(data_vector_file))
             output.write('# Data vector size (from base chain): {}\n'.format(block.theory_len))
-
+            output.write('# Like_column = {}\n'.format(block.like_column))
             if include_norm:
                 output.write('# Including detC factor in likelihood\n')
 
