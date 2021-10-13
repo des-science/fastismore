@@ -152,7 +152,15 @@ class Params():
         return int(self.get(*args, **kwargs))
 
     def get_bool(self, *args, **kwargs):
-        return bool(self.get(*args, **kwargs))
+        value = self.get(*args, **kwargs)
+        if type(value) == bool:
+            return value
+        if type(value) == str:
+            value = value.lower()
+            if value in ['y', 'yes', 't','true']:
+                return True
+            elif value in ['n', 'no', 'f', 'false']:
+                return False
 
     def get_double(self, *args, **kwargs):
         return np.double(self.get(*args, **kwargs))
@@ -273,7 +281,7 @@ def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2p
     # include_norm is true if covariance is not fixed
 #     include_norm = args.include_norm
     include_norm = include_norm or not like_obj.constant_covariance
-    include_norm = include_norm or params.get_string('include_norm', default='F').lower() in ['true', 't', 'yes']
+    include_norm = include_norm or params.get_bool('include_norm', default=False)
 
     block = Block(labels, like_column)
 
@@ -321,6 +329,7 @@ def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2p
 
             # Iterate through lines to compute IS weights (manually splitting lines to minimize use of RAM)
             for ii,line in enumerate(f):
+
                 if line[0] == '#':
                     continue
                 mysample = line.split() if not pc_chain_fn else pc_to_cosmosis_sample(line.split(), cosmosis_labels)
@@ -367,6 +376,7 @@ def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2p
                     print('Reached max samples passed by user ({})'.format(max_samples))
                     output.write('Halted because reached max samples passed by user: {}'.format(max_samples))
                     break
+
             print()
             print('Finished!')
 
