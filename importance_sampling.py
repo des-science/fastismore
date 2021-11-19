@@ -11,6 +11,7 @@
 import numpy as np
 import argparse, configparser
 import sys, os
+import collections
 
 LIKE_COLUMN_PRIORITY = iter(['like', 'post', '2pt_like--chi2'])
 
@@ -59,15 +60,35 @@ class Block():
             if like_column not in labels:
                 raise Exception("Couldn't find column: {}.".format(like_column))
             like_i = np.where(labels == like_column)[0]
+            if isinstance(like_i, np.ndarray): ##multiple like columns. Omega_k chains were done at low-res, then Cosmosis IS sampled at high-res, so can have duplicate columns for "extra output" cols like sigma8, chi2, 2pt_like. 
+                print('\n!!!!!!! ====== WARNING: DUPLICATE COLUMNS FOR USER-DEFINED "LIKE_COLUMN": "{}" ======= !!!!!\n   Using rightmost instance, but make sure you expect this is what you want!! \n'.format(like_column))
+                like_i = like_i[-1]
             self._like = lambda vec: float(vec[like_i])
+           
+        ### NW: adapting this to handle Omega_k like chains that have gone through the Cosmosis importance sampler
+        if 'weight' not in labels:
+            if ('log_weight' in labels) and ('old_weight' in labels): ##this is the case if did cosmosis IS of a low-res chain with higher res settings. Saves the old weight and log(IS_reweighting) but need to calc the new weight here (should really do in the cosmosis sampler so this is a hack)
+                old_weight_ix = np.where(labels == 'old_weight')[0]
+                log_weight_ix = np.where(labels == 'log_weight')[0]
+                self._weight = lambda vec: float(vec[old_weight_ix]) * np.nan_to_num(np.exp(float(vec[log_weight_ix])))
+                self.weighted = True
+            else:
+                self._weight = lambda vec: 1.0
+                self.weighted = False
 
-        if 'weight' in labels:
+        else:
             weight_i = np.where(labels == 'weight')[0]
             self._weight = lambda vec: float(vec[weight_i])
             self.weighted = True
-        else:
-            self._weight = lambda vec: 1.0
-            self.weighted = False
+            
+        # ## this also doesn't work with Ok_IS'ed chains. We should be saving a weight column
+        # if 'weight' in labels:
+        #     weight_i = np.where(labels == 'weight')[0]
+        #     self._weight = lambda vec: float(vec[weight_i])
+        #     self.weighted = True
+        # else:
+        #     self._weight = lambda vec: 1.0
+        #     self.weighted = False
 
         theory_i = np.array(['data_vector--2pt_theory_' in l for l in labels])
 
@@ -285,6 +306,8 @@ def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2p
 
     block = Block(labels, like_column)
 
+    if block.theory_len != len(data_vector):
+        raise Exception('Theory and data vectors are not same length ({} and {}.\n Labels = {}'.format(block.theory_len, len(data_vector), labels))
     # Initialize these variables
     precision_matrix = None
 #     log_det = None
