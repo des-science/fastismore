@@ -11,7 +11,7 @@
 import numpy as np
 import argparse, configparser
 import sys, os
-import collections
+from tqdm import tqdm
 
 LIKE_COLUMN_PRIORITY = iter(['like', 'post', '2pt_like--chi2'])
 
@@ -59,36 +59,35 @@ class Block():
             print("Using old loglike = {}.".format(like_column))
             if like_column not in labels:
                 raise Exception("Couldn't find column: {}.".format(like_column))
-            like_i = np.where(labels == like_column)[0]
-            if isinstance(like_i, np.ndarray): ##multiple like columns. Omega_k chains were done at low-res, then Cosmosis IS sampled at high-res, so can have duplicate columns for "extra output" cols like sigma8, chi2, 2pt_like. 
-                print('\n!!!!!!! ====== WARNING: DUPLICATE COLUMNS FOR USER-DEFINED "LIKE_COLUMN": "{}" ======= !!!!!\n   Using rightmost instance, but make sure you expect this is what you want!! \n'.format(like_column))
-                like_i = like_i[-1]
-            self._like = lambda vec: float(vec[like_i])
-           
-        ### NW: adapting this to handle Omega_k like chains that have gone through the Cosmosis importance sampler
-        if 'weight' not in labels:
-            if ('log_weight' in labels) and ('old_weight' in labels): ##this is the case if did cosmosis IS of a low-res chain with higher res settings. Saves the old weight and log(IS_reweighting) but need to calc the new weight here (should really do in the cosmosis sampler so this is a hack)
-                old_weight_ix = np.where(labels == 'old_weight')[0]
-                log_weight_ix = np.where(labels == 'log_weight')[0]
-                self._weight = lambda vec: float(vec[old_weight_ix]) * np.nan_to_num(np.exp(float(vec[log_weight_ix])))
-                self.weighted = True
-            else:
-                self._weight = lambda vec: 1.0
-                self.weighted = False
 
-        else:
+#             like_i = np.where(labels == like_column)[0]
+            def get_i(labels, name):
+                i = np.where(labels == name)[0]
+                if type(i) == float:
+                    return i
+                elif len(i) == 1:
+                    return i[0]
+                elif len(i) > 1: ##multiple like columns. Omega_k chains were done at low-res, then Cosmosis IS sampled at high-res, so can have duplicate columns for "extra output" cols like sigma8, chi2, 2pt_like.
+                    print('\n!!!!!!! ====== WARNING: DUPLICATE COLUMNS FOR USER-DEFINED "LIKE_COLUMN": "{}" ======= !!!!!\n   Using leftmost instance, but make sure you expect this is what you want!! \n'.format(like_column))
+                    return i[0]
+                    # raise Exception(f'Do you have more than one column named {name}?')
+            like_i = get_i(labels, like_column)
+            self._like = lambda vec: float(vec[like_i])
+        ### NW: adapting this to handle Omega_k like chains that have gone through the Cosmosis importance sampler
+        if 'weight' in labels:
             weight_i = np.where(labels == 'weight')[0]
             self._weight = lambda vec: float(vec[weight_i])
             self.weighted = True
-            
-        # ## this also doesn't work with Ok_IS'ed chains. We should be saving a weight column
-        # if 'weight' in labels:
-        #     weight_i = np.where(labels == 'weight')[0]
-        #     self._weight = lambda vec: float(vec[weight_i])
-        #     self.weighted = True
-        # else:
-        #     self._weight = lambda vec: 1.0
-        #     self.weighted = False
+        elif 'old_weight' in labels and 'log_weight' in labels: ##this is the case if did cosmosis IS of a low-res chain with higher res settings. Saves the old weight and log(IS_reweighting) but need to calc the new weight here (should really do in the cosmosis sampler so this is a hack)
+            print('WARNING: Using "exp(log_weight)*old_weight" as weight for baseline chain.')
+            old_weight_ix = np.where(labels == 'old_weight')[0]
+            log_weight_ix = np.where(labels == 'log_weight')[0]
+            self._weight = lambda vec: float(vec[old_weight_ix]) * np.nan_to_num(np.exp(float(vec[log_weight_ix])))
+            self.weighted = True
+        else:
+            print("WARNING: Haven't found weights for the baseline chain.")
+            self._weight = lambda vec: 1.0
+            self.weighted = False
 
         theory_i = np.array(['data_vector--2pt_theory_' in l for l in labels])
 
@@ -328,7 +327,7 @@ def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2p
         
     with open(samples_fn) as f:
 
-        with open(output_fn, 'w+') as output:
+        with open(output_fn, 'w') as output:
             # Setting the header of the output file
             output.write('#old_like\told_weight\tnew_like\tweight\n')
             output.write('#\n')
@@ -350,8 +349,15 @@ def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2p
             old_likes = []
             new_likes = []
 
+            # Counting samples just to use tqdm
+            print('Counting number of samples')
+            total_samples = list([1 if line[0] != '#' else 0 for line in f])
+            print(f'{sum(total_samples)} samples found.')
+            f.seek(0)
+
             # Iterate through lines to compute IS weights (manually splitting lines to minimize use of RAM)
-            for ii,line in enumerate(f):
+            for ii,line in tqdm(enumerate(f), total=len(total_samples)):
+            # for line in f:
 
                 if line[0] == '#':
                     continue
@@ -393,8 +399,7 @@ def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2p
                 new_likes.append(new_like)
 
                 output.write('%e\t%e\t%e\t%e\n' % (old_like, old_weight, new_like, weight))
-                if ii%10000==0:
-                    print('{} evals done...'.format(ii))
+                
                 if ii>max_samples:
                     print('Reached max samples passed by user ({})'.format(max_samples))
                     output.write('Halted because reached max samples passed by user: {}'.format(max_samples))
@@ -457,12 +462,23 @@ if __name__ == '__main__':
     #NW
     parser.add_argument('--pc-chain-fn', dest = 'pc_chain_fn', required = False,
                     help = 'Optional filepath to the polychord chain output. If included, load the baseline chain from the polychord output files rather than cosmosis output (useful if boost_posterior=T).')
-
     parser.add_argument('--max-samples', dest = 'max_samples', type=int, default = 999999999, required = False,
                help = 'Max number of samples before exiting (for debugging purposes).')
+    parser.add_argument('--overwrite', dest = 'overwrite', action='store_true',
+               help = 'Force overwrite output file.')
     
     args = parser.parse_args()
     
+    print(f"chain: {args.chain}")
+    print(f"data vector: {args.data_vector}")
+    print(f"output file: {args.output}")
+    
+    if os.path.exists(args.output):
+        if args.overwrite:
+            print(f"WARNING: file {args.output} already exists. Overwritting.")
+        else:
+            print(f"WARNING: file {args.output} already exists. Skipping.")
+            sys.exit()
     
     importance_sample(bl_chain_fn=args.chain, 
                       data_vector_file=args.data_vector, 
