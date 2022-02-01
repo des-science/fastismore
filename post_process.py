@@ -10,14 +10,18 @@ import shivam_2d_bias
 from chainconsumer import ChainConsumer
 
 params2plot = [
-    'cosmological_parameters--omega_m',
-#    'cosmological_parameters--s8',
-#    'cosmological_parameters--w',
-    'cosmological_parameters--sigma_8',
+   #  'cosmological_parameters--omega_m',
+   # 'cosmological_parameters--s8',
+   # 'cosmological_parameters--w',
+   # 'cosmological_parameters--wa',
+   # 'cosmological_parameters--wp',
+    # 'cosmological_parameters--sigma_8',
 #    'cosmological_parameters--h0',
 #    'cosmological_parameters--omega_b',
 #    'cosmological_parameters--n_s',
 #    'cosmological_parameters--a_s',
+   'cosmological_parameters--neff',
+   'cosmological_parameters--meffsterile',
 #    'shear_calibration_parameters--m1',
 #    'shear_calibration_parameters--m2',
 #    'shear_calibration_parameters--m3',
@@ -37,7 +41,10 @@ params2plot = [
 #    'intrinsic_alignment_parameters--alpha1',
 #    'intrinsic_alignment_parameters--alpha2',
 #    'intrinsic_alignment_parameters--bias_ta'
-
+    # 'cosmological_parameters--omega_k',
+    # 'npg_parameters--a2',
+    # 'npg_parameters--a3',
+    # 'npg_parameters--a4',
 ]
 
 not_param = [
@@ -52,12 +59,15 @@ not_param = [
     '2pt_like',
     'old_weight',
     'weight',
+    'old_post',
+    'log_weight',
 ]
 
 label_dict = {
     'cosmological_parameters--tau':  r'\tau',
     'cosmological_parameters--w':  r'w',
     'cosmological_parameters--wa':  r'w_a',
+    'cosmological_parameters--wp':  r'w_p',
     'cosmological_parameters--w0_fld':  r'w_{GDM}',
     'cosmological_parameters--cs2_fld': r'c_s^2',
     'cosmological_parameters--log_cs2': r'log(c_s^2)',
@@ -117,6 +127,11 @@ label_dict = {
     'mag_alpha_lens--alpha_3': r'\alpha_\text{lens}^3',
     'mag_alpha_lens--alpha_4': r'\alpha_\text{lens}^4',
     'mag_alpha_lens--alpha_5': r'\alpha_\text{lens}^5',
+    
+    'npg_parameters--a1': 'A_1',
+    'npg_parameters--a2': 'A_2',
+    'npg_parameters--a3': 'A_3',
+    'npg_parameters--a4': 'A_4',
 }
 
 param_to_label = np.vectorize(lambda param: label_dict[param] if param in label_dict else param)
@@ -155,8 +170,9 @@ def load_ini(filename, ini=None):
 class Chain:
     """Description: Generic chain object"""
 
-    def __init__(self, filename, boosted=False):
+    def __init__(self, filename, boosted=False, weight_option=0):
         self.filename = filename
+        self.weight_option = int(weight_option)
         self.name = '.'.join(filename.split('/')[-1].split('.')[:-1])
         self.chaindir = '/'.join(filename.split('/')[:-1])
         self.filename_boosted = self.chaindir + '/pcfiles/pc' + self.name[5:] + '_.txt' #go to pcfiles subdir and drop 'chain' from beginning of name
@@ -164,19 +180,25 @@ class Chain:
             self.load_boosted_data()
         else:
             self.load_data()
-        self.__add_extra()
+        self.add_extra()
 
-    def load_data(self, boosted=False):
+    def load_data(self, boosted=False, nsample=0):
         data = []
+        
         with open(self.filename) as f:
             labels = np.array(f.readline()[1:-1].lower().split())
             mask = ["data_vector" not in l for l in labels]
             for line in f.readlines():
-                if '#' in line:
+                if '#nsample' in line:
+                    nsample = int(line.replace('#nsample=', ''))
+                    print(f'Found nsample = {nsample}')
+                elif '#' in line:
                     continue
                 else:
                     data.append(np.array(line.split(), dtype=np.double)[mask])
-        self.data = {labels[mask][i].lower(): col for i, col in enumerate(np.array(data).T)}
+        if nsample != 0:
+            self.nsample = nsample
+        self.data = {labels[mask][i].lower(): col for i, col in enumerate(np.array(data)[-nsample:,:].T)}
         self.N = len(self.data[labels[0]])
         return self.data
 
@@ -207,9 +229,11 @@ class Chain:
         self.N = len(self.data[labels_pc[0]])
         return self.data
  
-    def __add_extra(self, data=None, extra=None):
+    def add_extra(self, data=None, extra=None):
         if data == None:
             data = self.data
+        else:
+            data = copy.copy(data)
 
         if extra != None:
             data.update(extra)
@@ -228,6 +252,13 @@ class Chain:
 
         data['cosmological_parameters--omega_c'] = \
             data['cosmological_parameters--omega_m'] - data['cosmological_parameters--omega_b']
+        
+        if 'cosmological_parameters--w' in data.keys() and 'cosmological_parameters--wa' in data.keys():
+            w0, wa = data['cosmological_parameters--w'], data['cosmological_parameters--wa']
+            w0wa_cov = np.cov(w0, wa, aweights=self.get_weights())
+            ap = 1. + w0wa_cov[0,1]/w0wa_cov[1,1]
+            print(f"a_pivot = {ap}")
+            data['cosmological_parameters--wp'] = w0 + wa*(1. - ap)
 
         return data
 
@@ -247,12 +278,13 @@ class Chain:
 
     def get_labels(self, params=None):
         if params == None:
-            return param_to_label(self.get_params())
-        else:
-            return param_to_label(params)
+            params = self.get_params()
+        return param_to_label(params)
 
-    def on_params(self, params2plot=None):
-        return np.array([self.data[l] for l in (self.get_params() if params2plot == None else params2plot)]).T
+    def on_params(self, params=None):
+        if params == None:
+            params = self.get_params()
+        return np.array([self.data[l] for l in params]).T
 
     def get_fiducial(self, filename=None, extra=None):
         """loads range values from values.ini file or chain file"""
@@ -263,7 +295,7 @@ class Chain:
             else None \
             for p in self.get_params()}
 
-        return self.__add_extra(fiducial, extra)
+        return self.add_extra(fiducial, extra)
 
     def params(self):
         if not hasattr(self, '_params'):
@@ -275,38 +307,53 @@ class Chain:
             self._values = load_ini(self.filename, ini='values')
         return self._values
 
-    def get_ranges(self, filename=None):
+    def get_ranges(self, filename=None, params=None):
         """loads range values from values.ini file or chain file"""
+        
+        if params == None:
+            params = self.get_params()
 
         self.ranges = {p:
             (lambda x: [float(x[0]), float(x[2])] if len(x) == 3 else [None, None])(self.values().get(*p.split('--')).split()) \
             if self.values().has_option(*p.split('--')) \
             else [None, None] \
-            for p in self.get_params()}
+            for p in params}
 
         return self.ranges
 
-    def get_MCSamples(self, settings=None):
+    def get_MCSamples(self, settings=None, params=None):
+        
+        if params == None:
+            params = self.get_params()
 
         if not hasattr(self, '_mcsamples'):
             self._mcsamples = MCSamples(
-                samples=self.on_params(),
+                samples=self.on_params(params=params),
                 weights=self.get_weights(),
                 #loglikes=self.get_likes(),
 
-                ranges=self.get_ranges(),
+                ranges=self.get_ranges(params=params),
                 sampler='nested' if self.get_sampler() in ['multinest', 'polychord'] else 'mcmc',
 
-                names=self.get_params(),
-                labels=[l for l in self.get_labels()],
+                names=params,
+                labels=[l for l in self.get_labels(params=params)],
                 settings=settings,
             )
 
         return self._mcsamples
 
     def get_weights(self):
-        if 'weight' in self.data.keys():
+        if self.weight_option == 0 and 'weight' in self.data.keys():
+            print('WARNING: Using column "weight" as weight for baseline chain.')
             w = self.data['weight']
+            return w/w.sum()
+        elif self.weight_option == 1 and 'log_weight' in self.data.keys() and 'old_weight' in self.data.keys():
+            print('WARNING: Using "exp(log_weight)*old_weight" as weight for baseline chain.')
+            w = self.data['old_weight']
+            return w/w.sum()
+        elif self.weight_option == 2 and 'old_weight' in self.data.keys():
+            print('WARNING: Using column "old_weight" as weight for baseline chain.')
+            w = self.data['old_weight']
             return w/w.sum()
         else:
             return None
@@ -400,29 +447,43 @@ class ImportanceChain(Chain):
     def on_params(self, *args, **kwargs):
         return self.base.on_params(*args, **kwargs)
 
+    def on_params(self, params=None):
+        if params == None:
+            params = self.get_params()
+        #data = self.base.data
+        data = self.add_extra(self.base.data)
+        data.update(self.data)
+        
+        return np.array([data[l] for l in params]).T
+    
     def get_likes(self):
         return self.data['new_like']
 
     def get_is_weights(self):
         w = np.nan_to_num(np.exp(self.data['new_like'] - self.data['old_like']))
+        if 'extra_is_weight' in self.data.keys():
+            print('Using extra IS weight.')
+            w *= self.data['extra_is_weight']
         return w
 
     def get_weights(self):
-        w = np.nan_to_num(self.data['old_weight']*self.get_is_weights())
+        # w = np.nan_to_num(self.data['old_weight']*self.get_is_weights())
+        print("WARNING: getting IS weights.")
+        w = self.base.get_weights()*self.get_is_weights()
 
         return w/w.sum()
 
-    def get_ranges(self, filename=None):
-        return self.base.get_ranges(filename=filename)
+    def get_ranges(self, *args, **kwargs):
+        return self.base.get_ranges(*args, **kwargs)
 
-    def get_sampler(self):
-        return self.base.get_sampler()
+    def get_sampler(self, *args, **kwargs):
+        return self.base.get_sampler(*args, **kwargs)
 
-    def get_params(self):
-        return self.base.get_params()
+    def get_params(self, *args, **kwargs):
+        return self.base.get_params(*args, **kwargs)
 
-    def get_labels(self):
-        return self.base.get_labels()
+    def get_labels(self, *args, **kwargs):
+        return self.base.get_labels(*args, **kwargs)
 
     def get_fiducial(self, *args, **kwargs):
         return self.base.get_fiducial(*args, **kwargs)
@@ -431,6 +492,11 @@ class ImportanceChain(Chain):
         inv_cov = np.linalg.inv(self.base.get_MCSamples().cov(params))
         p = self.get_mean(params) - self.base.get_mean(params)
         return np.einsum('i,ij,j', p, inv_cov, p)
+    
+    def load_data(self, *args, **kwargs):
+        nsample = self.base.nsample if hasattr(self.base, 'nsample') else 0
+        super().load_data(*args, **kwargs, nsample=nsample)
+        
 
 def main():
     parser = argparse.ArgumentParser(description = '')
@@ -478,7 +544,11 @@ def main():
     
     parser.add_argument('--boosted', dest = 'boosted',  action='store_true',
                     help = 'Load the baseline chain from the polychord output files rather than cosmosis output (useful if boost_posterior=T).')
-
+    
+    parser.add_argument('--base-weight', dest = 'base_weight',
+                    default = 0, required = False,
+                    help = 'define how the baseline weights will be determined (0: weight, 1: exp(log_weight)*old_weight, 2: old_weight.')
+    
     args = parser.parse_args()
 
     if args.all:
@@ -486,8 +556,8 @@ def main():
         args.triangle_plot = True
         args.base_plot = True
         args.markdown_stats = True
-
-    base_chain = Chain(args.chain, args.boosted)
+        
+    base_chain = Chain(args.chain, args.boosted, args.base_weight)
     is_chains = [ImportanceChain(iw_filename, base_chain) for i, iw_filename in enumerate(args.importance_weights)]
     extra_chains = [Chain(f) for f in args.extra_chains] if args.extra_chains else []
 
@@ -542,7 +612,7 @@ def main():
         for chain in is_chains:
             fig, ax = plot.subplots()
             ax.plot(chain.get_weights())
-            ax.plot(chain.base.get_weights())
+            # ax.plot(chain.base.get_weights())
             plot.savefig('{}_{}_weights.{}'.format(args.output, chain.name, args.fig_format))
 
     # Make triangle plot
