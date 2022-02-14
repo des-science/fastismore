@@ -6,7 +6,7 @@
 # chain with data_vector--2pt_theory_### columns
 #
 # output: output.txt: -1/2*chi2 (log-likelihood) and weight for each point in chain.txt
-#
+# 
 
 import numpy as np
 import argparse, configparser
@@ -239,34 +239,34 @@ def pc_to_cosmosis_sample(pc_sample_list, cosmosis_labels):
     cosmosis_sample_list = list(pc_sample_list[2:]) + [like, post, weight]
     return cosmosis_sample_list
             
-def load_boosted_data(cosmosis_chain_fn):
-    """load and store data from the polychord output chain (which includes more samples if it was run with boost_posteriors=T) instead of the cosmosis chain.
-    Retrieved using `self.filename_boosted`, which by default is at './pcfiles/pc_[cosmosis chain filename]_.txt' relative to the cosmosis chain referenced in self.filename. """
-    data = []
-    with open(cosmosis_chain_fn) as f: ##get labels and mask from cosmosis chain output
-        labels_cosmosis = np.array(f.readline()[1:-1].lower().split())
-        mask_cosmosis = ["data_vector" not in l for l in labels_cosmosis] #for size reasons, don't load data_vector terms
-        mask_cosmosis_params = [("data_vector" not in l) and (l not in ['weight', 'like', 'prior', 'post']) for l in labels_cosmosis]
-        mask_cosmosis_params_dv = [l not in ['weight', 'like', 'prior', 'post'] for l in labels_cosmosis]
+# def load_boosted_data(cosmosis_chain_fn):
+#     """load and store data from the polychord output chain (which includes more samples if it was run with boost_posteriors=T) instead of the cosmosis chain.
+#     Retrieved using `self.filename_boosted`, which by default is at './pcfiles/pc_[cosmosis chain filename]_.txt' relative to the cosmosis chain referenced in self.filename. """
+#     data = []
+#     with open(cosmosis_chain_fn) as f: ##get labels and mask from cosmosis chain output
+#         labels_cosmosis = np.array(f.readline()[1:-1].lower().split())
+#         mask_cosmosis = ["data_vector" not in l for l in labels_cosmosis] #for size reasons, don't load data_vector terms
+#         mask_cosmosis_params = [("data_vector" not in l) and (l not in ['weight', 'like', 'prior', 'post']) for l in labels_cosmosis]
+#         mask_cosmosis_params_dv = [l not in ['weight', 'like', 'prior', 'post'] for l in labels_cosmosis]
 
-        labels_pc = np.array(['weight', 'like'] + list(labels_cosmosis[mask_cosmosis_params_dv]) + ['prior']) #order of columns in PC output files
-        mask_pc = ["data_vector" not in l for l in labels_pc]
-    # boosted_data = np.genfromtxt(self.filename_boosted)[:,:] #array too large
+#         labels_pc = np.array(['weight', 'like'] + list(labels_cosmosis[mask_cosmosis_params_dv]) + ['prior']) #order of columns in PC output files
+#         mask_pc = ["data_vector" not in l for l in labels_pc]
+#     # boosted_data = np.genfromtxt(self.filename_boosted)[:,:] #array too large
 
-    with open(self.filename_boosted) as f:
-        for line in f.readlines():
-            if '#' in line:
-                continue
-            else:
-                data.append(np.array(line.split(), dtype=np.double)[mask_pc])
+#     with open(self.filename_boosted) as f:
+#         for line in f.readlines():
+#             if '#' in line:
+#                 continue
+#             else:
+#                 data.append(np.array(line.split(), dtype=np.double)[mask_pc])
 
-    self.data = {labels_pc[mask_pc][i].lower(): col for i, col in enumerate(np.array(data).T)}
-    self.data['like'] = -0.5 * self.data['like'] # PC originally stores -2*loglike, change to just loglike to match cosmosis
-    self.data['post'] = self.data['prior'] + self.data['like']
-    self.N = len(self.data[labels_pc[0]])
-    return self.data
+#     self.data = {labels_pc[mask_pc][i].lower(): col for i, col in enumerate(np.array(data).T)}
+#     self.data['like'] = -0.5 * self.data['like'] # PC originally stores -2*loglike, change to just loglike to match cosmosis
+#     self.data['post'] = self.data['prior'] + self.data['like']
+#     self.N = len(self.data[labels_pc[0]])
+#     return self.data
 
-def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2pt_like', like_column='like', include_norm=False, pc_chain_fn=None, max_samples=1e9):
+def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2pt_like', like_column='like', include_norm=False, pc_chain_fn=None, max_samples=1e9, start_index=0):
     """This code computes importance weights for a data vector given a chain with data_vector--2pt_theory_### columns. It saves an output file with weights and likelihoods for samples of both the baseline (old) and importance sampled (new) chains.
     
     Parameters:
@@ -278,7 +278,8 @@ def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2p
     include_norm (bool): Force inclusion of the covariance norm in likelihood evaluation (default=False)
     pc_chain_fn (str): Optional filepath to the polychord chain output. If included, load the baseline chain from the polychord output files rather than cosmosis output (useful if boost_posterior=T).
     max_samples (int): Max number of samples to run (useful for debugging). Default 1e9.
-
+    start_index (int): Sample index to start computing weights for. Useful for skipping lots of early low weight samples for debugging.
+    
     Returns:
     dict: Containing keys 'old_weights', 'new_weights', 'old_likes', 'new_likes'
     """
@@ -312,6 +313,7 @@ def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2p
     precision_matrix = None
 #     log_det = None
     _, log_det_orig = np.linalg.slogdet(like_obj.cov_orig)
+    same_cov_count = 0
 
     total_is = 0.
     norm_fact = 0.
@@ -353,16 +355,19 @@ def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2p
             # Iterate through lines to compute IS weights (manually splitting lines to minimize use of RAM)
             for ii,line in enumerate(f):
 
-                if line[0] == '#':
+                if line[0] == '#' or ii < start_index:
                     continue
                 mysample = line.split() if not pc_chain_fn else pc_to_cosmosis_sample(line.split(), cosmosis_labels)
                 block.update(np.array(mysample, dtype=np.float64))
 
                 # Check if covariance is set and whether we need to constantly update it
-                if not like_obj.constant_covariance or precision_matrix is None:
-#                     covariance_matrix = like_obj.extract_covariance(block) #slow. recomputes cholesky of cov_orig each time
-#                     covariance_matrix = (like_obj.cov_orig)[:]
+                if ((not like_obj.constant_covariance) & (same_cov_count < 200)) or precision_matrix is None:
+                    covariance_matrix = like_obj.extract_covariance(block) #slow. recomputes cholesky of cov_orig each time
                     precision_matrix = like_obj.extract_inverse_covariance(block)
+                    if np.allclose(covariance_matrix, like_obj.cov_orig):
+                        same_cov_count += 1 ## updating cov is very expensive and some of our chains incorrectly have constant_covariance = False even though it is constant. If we've done this a lot and it's clearly not varying with cosmology, then stop calcing.
+                    if same_cov_count == 199:
+                        print('\nWARNING! like_obj.constant_covariance==False, but no change with 200 different cosmologies so assuming cosmology independent from now on for significant speedup.\n If this is in error (i.e. should be cosmology dependence in covariance), then IS output will be wrong!')
 
                 # Core computation
                 d = data_vector - block.get_theory()
@@ -393,9 +398,9 @@ def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2p
                 new_likes.append(new_like)
 
                 output.write('%e\t%e\t%e\t%e\n' % (old_like, old_weight, new_like, weight))
-                if ii%10000==0:
+                if (ii-start_index)%10000==0:
                     print('{} evals done...'.format(ii))
-                if ii>max_samples:
+                if (ii-start_index)>max_samples:
                     print('Reached max samples passed by user ({})'.format(max_samples))
                     output.write('Halted because reached max samples passed by user: {}'.format(max_samples))
                     break
@@ -433,6 +438,7 @@ def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2p
             write_output()
             write_output('\tTotal samples' + ' '*27 + '{}'.format(Nsample))
             return {'old_weights':old_weights, 'new_weights':weights, 'old_like':np.array(old_likes), 'new_likes':np.array(new_likes)}
+
 
 if __name__ == '__main__':
     # First, let's handle input arguments
