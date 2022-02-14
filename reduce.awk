@@ -11,7 +11,7 @@ NR == 1 {
 	
 	# Look for columns that are not data_vector and append to the indices array
 	for(i = 1; i <= NF; i++) {
-		if(tolower($i) !~ /^data_vector/) {
+		if(tolower($i) !~ /^data_vector/ && tolower($i) !~ /^sigma_crit_inv/) {
 			indices[length(indices) + 1] = i;
 			printf "%s ", $i;
 		}
