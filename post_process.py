@@ -459,8 +459,13 @@ class ImportanceChain(Chain):
     def get_likes(self):
         return self.data['new_like']
 
-    def get_is_weights(self):
-        w = np.nan_to_num(np.exp(self.data['new_like'] - self.data['old_like']))
+    def get_is_weights(self, regularize=True):
+        """If regularize=True (default), divide by maximum likelihood difference before computing weights. Cancels when normalize weights, and helps with overflow when large offset in loglikelihoods."""
+        nonzero = (self.base.get_weights()!=0)
+        likediff = self.data['new_like'] - self.data['old_like']
+        if regularize=True:
+            maxdiff = np.max(likediff[nonzero])
+        w = np.nan_to_num(np.exp(likediff - maxdiff))
         if 'extra_is_weight' in self.data.keys():
             print('Using extra IS weight.')
             w *= self.data['extra_is_weight']
