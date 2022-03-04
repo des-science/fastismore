@@ -171,6 +171,12 @@ class Chain:
     """Description: Generic chain object"""
 
     def __init__(self, filename, boosted=False, weight_option=0):
+        """Initialize chain with given filename (full path). Set boosted=True if you want to load a boosted chain. If boosted_chain_fn is passed, use that, otherwise use default format/path for Y3 (i.e. a subdir /pcfiles/ with 'pc_' added and 'chain' dropped.
+        weight_option: 0: use column "weight" as weight for chain. [Default and almost certainly what you want. Use subclass ImportanceChain for importance weights.]
+                       1: use exp('log_weight')*'old_weight' as weight for chain
+                       2: use 'old_weight' as weight for chain
+                       
+            """
         self.filename = filename
         self.weight_option = int(weight_option)
         self.name = '.'.join(filename.split('/')[-1].split('.')[:-1])
@@ -356,6 +362,7 @@ class Chain:
             w = self.data['old_weight']
             return w/w.sum()
         else:
+            print('No weight criteria satisfied. Not returning weights.')
             return None
 
     def get_likes(self):
@@ -386,7 +393,6 @@ class Chain:
             self.ESS_dict = {
                     'Euclidean distance': 1/(w**2).sum(), # overestimates
                     'Inverse max weight': 1/np.max(w), # underestimates; best when bias is large
-
                     'Gini coefficient': -2*np.sum(np.arange(1,N+1)*np.sort(w)) + 2*N + 1, # best when bias and N are small
                     'Square root sum': np.sum(np.sqrt(w))**2,
                     'Peak integrated': -N*np.sum(w[w>=1/N]) + np.sum(w>=1/N) + N,
@@ -413,21 +419,27 @@ class ImportanceChain(Chain):
         self.load_data()
 
     def get_dloglike_stats(self):
-        """compute weighted average and rms of loglikelihood difference. should be <~ o(1).
+        """compute weighted average and rms of loglikelihood difference from baseline to IS chain. 
+        Deviance is -2*loglike; for Gaussian likelihood, dloglike = -0.5 * <delta chi^2>.
+        RMS is included for back-compatibility. It can capture some differences that dloglike misses, but these are largely captured by ESS, so
+        dloglike and ESS should work as primary quality statistics.
+        Should be <~ o(1).
         returns (dloglike, rms_dloglike)"""
-        dloglike = np.average(self.data['old_like'] - self.data['new_like'], weights=self.data['old_weight'])
-        rmsdloglike = np.average((self.data['old_like'] - self.data['new_like'])**2, weights=self.data['old_weight'])**0.5
+        dloglike = np.average(self.data['new_like'] - self.data['old_like'], weights=self.data['old_weight'])
+        rmsdloglike = np.average((self.data['new_like'] - self.data['old_like'])**2, weights=self.data['old_weight'])**0.5
 
         return dloglike, rmsdloglike
 
     def get_ESS_NW(self, weight_by_multiplicity=True):
         """compute and return effective sample size of is chain. 
-        if is chain is identical to baseline, then just equals full sample size.
-        insensitive to multiplicative scaling, i.e. if is chain shows all points exactly half as likely, will not show up in ess,
-        so use mean_dloglike stat for that.
+        Is a little more correct than using euclidean ESS of final weights in how it treats the fact that initial chain is weighted, 
+        so we shouldn't be able to get a higher effective sample size by adding additional weights. Difference is small in practice.
+        If is chain is identical to baseline, then just equals full sample size.
+        insensitive to multiplicative scaling, i.e. if IS chain shows all points exactly half as likely, will not show up in ess,
+        use mean_dloglike stat for that.
         (see e.g. https://arxiv.org/pdf/1602.03572.pdf or 
         http://www.nowozin.net/sebastian/blog/effective-sample-size-in-importance-sampling.html)"""
-        #want stats on change to weights, but noisier if compute from new_weight/old_weight, so use e^dloglike directly.
+        #Noisier if compute from new_weight/old_weight, so use e^dloglike directly.
         weight_ratio = np.exp(self.data['new_like'] - self.data['old_like'])
         nsamples = len(weight_ratio)
         if weight_by_multiplicity: 
@@ -437,7 +449,12 @@ class ImportanceChain(Chain):
         normed_weights = weight_ratio / (np.average(weight_ratio, weights=mult)) #pulled out factor of nsamples
         return nsamples * 1./(np.average(normed_weights**2, weights=mult))
 
-
+    def get_delta_logz(self):
+        """get estimate on shift of evidence. Note that only uses posterior points; won't account for contributions from changes in  volume of likelihood shells"""
+        w_is = self.get_is_weights()
+        w_bl = self.base.get_weights()
+        return np.log(np.average(w_is[w_bl>0], weights=w_bl[w_bl>0]))
+    
     def get_mean_err(self, params):
         return self.base.get_MCSamples().std(params)/self.get_ESS()**0.5
 
@@ -474,8 +491,9 @@ class ImportanceChain(Chain):
     def get_weights(self):
         # w = np.nan_to_num(self.data['old_weight']*self.get_is_weights())
         print("WARNING: getting IS weights.")
-        w = self.base.get_weights()*self.get_is_weights()
-
+        w_bl = self.base.get_weights()
+        w = np.zeros_like(w_bl)
+        w[w_bl>0] = (w_bl * self.get_is_weights())[w_bl>0] ##guard against any 0 * inf nonsense
         return w/w.sum()
 
     def get_ranges(self, *args, **kwargs):
@@ -568,7 +586,7 @@ def main():
 
     N_IS = len(is_chains)
 
-    if args.stats:
+    if args.stats: #we should really probably change this to output in a more machine-readable format
         output_string = ''
         for chain in is_chains:
             ESS_base = chain.base.get_ESS_dict()
@@ -596,12 +614,13 @@ def main():
             for p in itt.combinations(params2plot, 2):
                 output_string += '\n\t{:<40}\n\t{:<40} {:7n}\n'.format(*p, chain.get_2d_shift(p))
 
-            output_string += '\nDelta loglike\n'
+            output_string += '\nDelta loglike (= -2*<delta chi^2>, want shifts of <~O(1))\n'
             dl = chain.get_dloglike_stats()
             output_string += '\tAverage: {:7n}\n'.format(dl[0])
             output_string += '\tRMS:     {:7n}\n'.format(dl[1])
+            output_string += '\delta logZ:     {:7n}\n'.format(chain.get_delta_logz())
 
-            output_string += '\nEffective sample sizes\n'
+            output_string += '\nEffective sample sizes (rough rule of thumb is want ~ESS_IS/ESS_BL > ~0.1 and ESS_IS > ~100)\n'
             for key in ESS_base.keys():
                 output_string += '\t{:<30}\t{:7n}/{:7n} = {:7n}\n'.format(key, ESS_IS[key], ESS_base[key], ESS_IS[key]/ESS_base[key])
 
