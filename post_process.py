@@ -11,18 +11,18 @@ import shivam_2d_bias
 from chainconsumer import ChainConsumer
 
 params2plot = [
-   #  'cosmological_parameters--omega_m',
-   # 'cosmological_parameters--s8',
+    'cosmological_parameters--omega_m',
+   'cosmological_parameters--s8',
    # 'cosmological_parameters--w',
    # 'cosmological_parameters--wa',
    # 'cosmological_parameters--wp',
-    # 'cosmological_parameters--sigma_8',
+    'cosmological_parameters--sigma_8',
 #    'cosmological_parameters--h0',
 #    'cosmological_parameters--omega_b',
 #    'cosmological_parameters--n_s',
 #    'cosmological_parameters--a_s',
-   'cosmological_parameters--neff',
-   'cosmological_parameters--meffsterile',
+   # 'cosmological_parameters--neff',
+   # 'cosmological_parameters--meffsterile',
 #    'shear_calibration_parameters--m1',
 #    'shear_calibration_parameters--m2',
 #    'shear_calibration_parameters--m3',
@@ -46,6 +46,9 @@ params2plot = [
     # 'npg_parameters--a2',
     # 'npg_parameters--a3',
     # 'npg_parameters--a4',
+    'modified_gravity--sigma0',
+    'modified_gravity--mu0',
+    
 ]
 
 not_param = [
@@ -133,6 +136,8 @@ label_dict = {
     'npg_parameters--a2': 'A_2',
     'npg_parameters--a3': 'A_3',
     'npg_parameters--a4': 'A_4',
+    'modified_gravity--sigma0': r"\Sigma_0",
+    'modified_gravity--mu0': r"\mu_0",
 }
 
 param_to_label = np.vectorize(lambda param: label_dict[param] if param in label_dict else param)
@@ -171,15 +176,15 @@ def load_ini(filename, ini=None):
 class Chain:
     """Description: Generic chain object"""
 
-    def __init__(self, filename, boosted=False, weight_option=0):
+    def __init__(self, filename, boosted=False, weight_option='weight'):
         """Initialize chain with given filename (full path). Set boosted=True if you want to load a boosted chain. If boosted_chain_fn is passed, use that, otherwise use default format/path for Y3 (i.e. a subdir /pcfiles/ with 'pc_' added and 'chain' dropped.
-        weight_option: 0: use column "weight" as weight for chain. [Default and almost certainly what you want. Use subclass ImportanceChain for importance weights.]
-                       1: use exp('log_weight')*'old_weight' as weight for chain
-                       2: use 'old_weight' as weight for chain
+        weight_option: weight: use column "weight" as weight for chain. [Default and almost certainly what you want. Use subclass ImportanceChain for importance weights.]
+                       log_weight: use exp('log_weight')*'old_weight' as weight for chain
+                       old_weight: use 'old_weight' as weight for chain
                        
             """
         self.filename = filename
-        self.weight_option = int(weight_option)
+        self.weight_option = weight_option
         self.name = '.'.join(filename.split('/')[-1].split('.')[:-1])
         self.chaindir = '/'.join(filename.split('/')[:-1])
         self.filename_boosted = self.chaindir + '/pcfiles/pc' + self.name[5:] + '_.txt' #go to pcfiles subdir and drop 'chain' from beginning of name
@@ -291,6 +296,8 @@ class Chain:
     def on_params(self, params=None):
         if params == None:
             params = self.get_params()
+        if type(params) == str:
+            params = [params]
         return np.array([self.data[l] for l in params]).T
 
     def get_fiducial(self, filename=None, extra=None):
@@ -350,15 +357,15 @@ class Chain:
         return self._mcsamples
 
     def get_weights(self):
-        if self.weight_option == 0 and 'weight' in self.data.keys():
+        if self.weight_option == 'weight' and 'weight' in self.data.keys():
             print('WARNING: Using column "weight" as weight for baseline chain.')
             w = self.data['weight']
             return w/w.sum()
-        elif self.weight_option == 1 and 'log_weight' in self.data.keys() and 'old_weight' in self.data.keys():
+        elif self.weight_option == 'log_weight' and 'log_weight' in self.data.keys() and 'old_weight' in self.data.keys():
             print('WARNING: Using "exp(log_weight)*old_weight" as weight for baseline chain.')
             w = self.data['old_weight']
             return w/w.sum()
-        elif self.weight_option == 2 and 'old_weight' in self.data.keys():
+        elif self.weight_option == 'old_weight' and 'old_weight' in self.data.keys():
             print('WARNING: Using column "old_weight" as weight for baseline chain.')
             w = self.data['old_weight']
             return w/w.sum()
@@ -576,8 +583,8 @@ def main():
                     help = 'Load the baseline chain from the polychord output files rather than cosmosis output (useful if boost_posterior=T).')
     
     parser.add_argument('--base-weight', dest = 'base_weight',
-                    default = 0, required = False,
-                    help = 'define how the baseline weights will be determined (0: weight, 1: exp(log_weight)*old_weight, 2: old_weight.')
+                    default = 'weight', required = False,
+                    help = 'define how the baseline weights will be determined ("weight": weight, "log_weight": exp(log_weight)*old_weight, "old_weight": old_weight.')
     
     args = parser.parse_args()
 
