@@ -2,6 +2,7 @@
 # coding: utf-8
 
 import numpy as np
+import scipy as sp
 import matplotlib.pyplot as plot
 from getdist import MCSamples, plots
 import argparse, configparser, copy
@@ -510,6 +511,12 @@ class ImportanceChain(Chain):
 
     def get_fiducial(self, *args, **kwargs):
         return self.base.get_fiducial(*args, **kwargs)
+    
+    # def get_1d_shift_integrated(self, param):
+    #     base_mean, is_mean = self.base.get_mean(param), self.get_mean(param)
+    #     vals = self.on_params(param)
+    #     mi, ma = [base_mean, is_mean] if base_mean < is_mean else [is_mean, base_mean]
+    #     return sum(self.base.get_weights()[(vals > mi)*(vals < ma)])
 
     def get_2d_shift(self, params):
         inv_cov = np.linalg.inv(self.base.get_MCSamples().cov(params))
@@ -608,6 +615,15 @@ def main():
             output_string += '\nDelta parameter/std ± 1/sqrt(ESS)\n'
             for p, bm, bs, im in zip(params2plot, base_mean, base_std, is_mean):
                 output_string += '\t{:<40} {:7n} ± {:7n}\n'.format(p, (im-bm)/bs, 1/np.sqrt(ESS_IS['Euclidean distance']))
+
+            output_string += '\nDelta parameter (n-sigma)\n'
+            for p, bm, im in zip(params2plot, base_mean, is_mean):
+                vals = chain.base.data[p]
+                mi, ma, si = [bm, im, 1] if bm < im else [im, bm, -1]
+                pval_base = np.sum(chain.base.get_weights()[(vals > mi)*(vals < ma)])/np.sum(chain.base.get_weights())
+                pval_is   = np.sum(chain.get_weights()[(vals > mi)*(vals < ma)])/np.sum(chain.get_weights())
+                output_string += '\t{:<40} {:7n} (base), {:7n} (cont)\n'.format(p, si*np.sqrt(2)*sp.special.erfinv(2*pval_base),
+                                                                                   si*np.sqrt(2)*sp.special.erfinv(2*pval_is))
 
             output_string += '\n2D bias\n'
             param_combinations = np.array(list())
