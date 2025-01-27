@@ -17,13 +17,12 @@ LIKE_COLUMN_PRIORITY = iter(['like', 'post', '2pt_like--chi2'])
 
 #  Imports 2pt_like module
 try:
-    sys.path.append(os.environ['COSMOSIS_SRC_DIR'] + '/cosmosis-standard-library/likelihood/2pt')
-    sys.path.append(os.environ['COSMOSIS_SRC_DIR'])
+    sys.path.append(os.environ['CSL_DIR'] + '/likelihood/2pt/2pt_point_mass')
 except:
-    print("Failed to find COSMOSIS dir. Did you set up COSMOSIS?")
+    print("Failed to find cosmosis-standard-library dir. Did you set up CSL_DIR?")
     sys.exit(1)
 
-twopointlike = __import__('2pt_like_allmarg')
+twopointlike = __import__('2pt_point_mass')
 
 class ImportanceSamplingLikelihood(twopointlike.TwoPointGammatMargLikelihood):
     def __init__(self, options):
@@ -197,6 +196,9 @@ class Params():
     def __getattr__(self, attr):
         """defaults any unspecified methods to the ConfigParser object"""
         return getattr(self.parser, attr)
+
+    def __getitem__(self, item):
+        return self.get(item)
 
 def get_ess_dict(weights):
     w = weights/weights.sum()
@@ -372,8 +374,8 @@ def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2p
                     precision_matrix = like_obj.extract_inverse_covariance(block)
                     if np.allclose(covariance_matrix, like_obj.cov_orig):
                         same_cov_count += 1 ## updating cov is very expensive and some of our chains incorrectly have constant_covariance = False even though it is constant. If we've done this a lot and it's clearly not varying with cosmology, then stop calcing.
-                    if same_cov_count == 199:
-                        print('\nWARNING! like_obj.constant_covariance==False, but no change with 200 different cosmologies so assuming cosmology independent from now on for significant speedup.\n If this is in error (i.e. should be cosmology dependence in covariance), then IS output will be wrong!')
+                    #if same_cov_count == 199:
+                        #print('\nWARNING: like_obj.constant_covariance==False, but no change with 200 different cosmologies so assuming cosmology independent from now on for significant speedup.\n If this is in error (i.e. should be cosmology dependence in covariance), then IS output will be wrong!')
 
                 # Core computation
                 d = data_vector - block.get_theory()
@@ -404,8 +406,8 @@ def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2p
                 new_likes.append(new_like)
 
                 output.write('%e\t%e\t%e\t%e\n' % (old_like, old_weight, new_like, weight))
-                if (ii-start_index)%10000==0:
-                    print('{} evals done...'.format(ii))
+#                if (ii-start_index)%10000==0:
+#                    print('{} evals done...'.format(ii))
                 if (ii-start_index)>max_samples:
                     print('Reached max samples passed by user ({})'.format(max_samples))
                     output.write('Halted because reached max samples passed by user: {}'.format(max_samples))
