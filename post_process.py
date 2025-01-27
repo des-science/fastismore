@@ -773,7 +773,7 @@ def main():
                     default = 'weight', required = False,
                     help = 'define how the baseline weights will be determined ("weight": weight, "log_weight": exp(log_weight)*old_weight, "old_weight": old_weight.')
     
-    parser.add_argument('--config', dest = 'config', required = False,
+    parser.add_argument('--config', dest = 'config', required = True,
                     help = 'Loads config yaml file.')
 
     parser.add_argument('--debug', dest = 'debug', action='store_true', default=False, required=False,
