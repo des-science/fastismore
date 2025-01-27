@@ -1,15 +1,16 @@
 # fastismore
 
-Importance sampling tools for DES Extensions
+Importance sampling tools for DES Extensions.
 
 ## How to use
 
 1. Run your favorite sampler in cosmosis with
 
 ```ini
-extra_output = ...  data_vector/2pt_theory#639 sigma_crit_inv_lens_source/sigma_crit_inv_1_1 ...
+extra_output = ... sigma_crit_inv_lens_source/sigma_crit_inv_1_1 sigma_crit_inv_lens_source/sigma_crit_inv_1_2 ... data_vector/2pt_theory#639
 ```
-where `#639` indicates the size of your scale cut datavector, and the `sigma_crit_i_j` factors should include all combinations of lens bins `i` and source bins `j`.
+
+where `#639` should be replaced with the size of your scale cut datavector, and the `sigma_crit_inv_i_j` factors should include all combinations of lens bin `i` and source bin `j`.
 
 3. Run importance_sampling.py to compute importance weights for the new data vector.
 
