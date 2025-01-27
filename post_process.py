@@ -3,53 +3,37 @@
 
 import numpy as np
 import scipy as sp
-import matplotlib.pyplot as plot
-from getdist import MCSamples, plots
-import argparse, configparser, copy
+
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+
+import argparse, configparser, copy, yaml
 import itertools as itt
-import shivam_2d_bias
+
+from getdist import MCSamples, plots
+from getdist.paramnames import makeList
 from chainconsumer import ChainConsumer
 
-params2plot = [
-    'cosmological_parameters--omega_m',
-   'cosmological_parameters--s8',
-   # 'cosmological_parameters--w',
-   # 'cosmological_parameters--wa',
-   # 'cosmological_parameters--wp',
-    'cosmological_parameters--sigma_8',
-#    'cosmological_parameters--h0',
-#    'cosmological_parameters--omega_b',
-#    'cosmological_parameters--n_s',
-#    'cosmological_parameters--a_s',
-   # 'cosmological_parameters--neff',
-   # 'cosmological_parameters--meffsterile',
-#    'shear_calibration_parameters--m1',
-#    'shear_calibration_parameters--m2',
-#    'shear_calibration_parameters--m3',
-#    'shear_calibration_parameters--m4',
-#    'lens_photoz_errors--bias_1',
-#    'lens_photoz_errors--bias_2',
-#    'lens_photoz_errors--bias_3',
-#    'lens_photoz_errors--bias_4',
-#    'lens_photoz_errors--bias_5',
-#    'bias_lens--b1',
-#    'bias_lens--b2',
-#    'bias_lens--b3',
-#    'bias_lens--b4',
-#    'bias_lens--b5',
-#    'intrinsic_alignment_parameters--a1',
-#    'intrinsic_alignment_parameters--a2',
-#    'intrinsic_alignment_parameters--alpha1',
-#    'intrinsic_alignment_parameters--alpha2',
-#    'intrinsic_alignment_parameters--bias_ta'
-    # 'cosmological_parameters--omega_k',
-    # 'npg_parameters--a2',
-    # 'npg_parameters--a3',
-    # 'npg_parameters--a4',
-    'modified_gravity--sigma0',
-    'modified_gravity--mu0',
-    
-]
+import shivam_2d_bias
+
+verbose = False
+
+mpl.rcParams['figure.dpi']= 150
+plt.rcParams['savefig.dpi'] = 300
+mpl.rcParams['figure.facecolor']= 'white'
+mpl.rcParams['text.usetex']= True
+mpl.rcParams['font.family']= 'serif'
+mpl.rcParams['font.serif']= 'cm'
+mpl.rcParams['font.size']= 10
+mpl.rcParams['pgf.texsystem']= "pdflatex"
+mpl.rcParams['pgf.rcfonts']= False
+mpl.rcParams['lines.linewidth'] = 1.75
+
+figwidth = 440/72.27
+golden_ratio = 0.5*(1+5**0.5)
+mpl.rcParams['figure.figsize'] = (figwidth, figwidth/golden_ratio)
+
+mpl.rcParams['axes.prop_cycle'] = mpl.cycler(color=['#000000', '#3E89DA', '#FEFEFE', '#F87A44']) 
 
 not_param = [
     'like',
@@ -140,8 +124,17 @@ label_dict = {
     'modified_gravity--mu0': r"\mu_0",
 }
 
+# ------------------ Auxiliary functions -------------------------------
+
 param_to_label = np.vectorize(lambda param: label_dict[param] if param in label_dict else param)
 param_to_latex = np.vectorize(lambda param: '${}$'.format(label_dict[param]) if param in label_dict else param)
+
+def get_nsample(filename):
+    with open(filename,"r") as fi:
+        for ln in fi:
+            if ln.startswith("#nsample="):
+                nsamples = int(ln[9:])
+    return nsamples
 
 def load_ini(filename, ini=None):
     """loads given ini info from chain file. If ini=None, loads directly from file.ini"""
@@ -155,7 +148,8 @@ def load_ini(filename, ini=None):
             line = f.readline()
             lines = []
 
-            print("Looking for START_OF_{} in file {}".format(ini, filename))
+            if verbose:
+                print("Looking for START_OF_{} in file {}".format(ini, filename))
 
             while("START_OF_{}".format(ini) not in line):
                 line = f.readline()
@@ -172,6 +166,8 @@ def load_ini(filename, ini=None):
     values.read_string('\r'.join(lines[:-1]))
 
     return values
+
+# ---------------- Classes to handle chains and importance sampling ----------------
 
 class Chain:
     """Description: Generic chain object"""
@@ -203,7 +199,8 @@ class Chain:
             for line in f.readlines():
                 if '#nsample' in line:
                     nsample = int(line.replace('#nsample=', ''))
-                    print(f'Found nsample = {nsample}')
+                    if verbose:
+                        print(f'Found nsample = {nsample}')
                 elif '#' in line:
                     continue
                 else:
@@ -269,7 +266,8 @@ class Chain:
             w0, wa = data['cosmological_parameters--w'], data['cosmological_parameters--wa']
             w0wa_cov = np.cov(w0, wa, aweights=self.get_weights())
             ap = 1. + w0wa_cov[0,1]/w0wa_cov[1,1]
-            print(f"a_pivot = {ap}")
+            if verbose:
+                print(f"a_pivot = {ap}")
             data['cosmological_parameters--wp'] = w0 + wa*(1. - ap)
 
         return data
@@ -277,7 +275,8 @@ class Chain:
     def get_sampler(self):
         """reads the sampler name from a given chain"""
         sampler = self.params().get('runtime', 'sampler')
-        # print("Sampler is {}".format(sampler))
+        if verbose:
+            print("Sampler is {}".format(sampler))
         return sampler
 
     def get_params(self):
@@ -358,19 +357,23 @@ class Chain:
 
     def get_weights(self):
         if self.weight_option == 'weight' and 'weight' in self.data.keys():
-            print('WARNING: Using column "weight" as weight for baseline chain.')
+            if verbose:
+                print('Using column "weight" as weight for baseline chain.')
             w = self.data['weight']
             return w/w.sum()
         elif self.weight_option == 'log_weight' and 'log_weight' in self.data.keys() and 'old_weight' in self.data.keys():
-            print('WARNING: Using "exp(log_weight)*old_weight" as weight for baseline chain.')
+            if verbose:
+                print('Using "exp(log_weight)*old_weight" as weight for baseline chain.')
             w = self.data['old_weight']
             return w/w.sum()
         elif self.weight_option == 'old_weight' and 'old_weight' in self.data.keys():
-            print('WARNING: Using column "old_weight" as weight for baseline chain.')
+            if verbose:
+                print('Using column "old_weight" as weight for baseline chain.')
             w = self.data['old_weight']
             return w/w.sum()
         else:
-            print('No weight criteria satisfied. Not returning weights.')
+            if verbose:
+                print('No weight criteria satisfied. Not returning weights.')
             return None
 
     def get_likes(self):
@@ -492,13 +495,15 @@ class ImportanceChain(Chain):
             maxdiff = np.max(likediff[nonzero])
         w = np.nan_to_num(np.exp(likediff - maxdiff))
         if 'extra_is_weight' in self.data.keys():
-            print('Using extra IS weight.')
+            if verbose:
+                print('Using extra IS weight.')
             w *= self.data['extra_is_weight']
         return w
 
     def get_weights(self):
         # w = np.nan_to_num(self.data['old_weight']*self.get_is_weights())
-        print("WARNING: getting IS weights.")
+        if verbose:
+            print("WARNING: getting IS weights.")
         w_bl = self.base.get_weights()
         w = np.zeros_like(w_bl)
         w[w_bl>0] = (w_bl * self.get_is_weights())[w_bl>0] ##guard against any 0 * inf nonsense
@@ -533,7 +538,186 @@ class ImportanceChain(Chain):
     def load_data(self, *args, **kwargs):
         nsample = self.base.nsample if hasattr(self.base, 'nsample') else 0
         super().load_data(*args, **kwargs, nsample=nsample)
+
+
+
+# ---------------- Functions to produce outputs ---------------------
+
+def plot_2d(param1, param2, base_chain, is_chains, truth, labels, sigma=0.3):
+    fig, ax = plt.subplots()
+
+    linestyles = ['-', ':', '--', '-.', (0, (3, 1, 1, 1, 1, 1))]
+    markers = ['o', '<', '>', 'v', '^']
+    colors = ['#000000', '#3E89DA', '#F87A44', '#427B48', '#927FC3']
+    markersize=6
+    lw=1.8
+    
+    samples = [base_chain.get_MCSamples()]
+    samples.extend([c.get_MCSamples() for c in is_chains])
+    
+    roots = makeList(samples)
+    
+    g = plots.getSinglePlotter()
+    
+    ax.axvline(truth[param1],ls='--',alpha=0.3,color='k')
+    ax.axhline(truth[param2],ls='--',alpha=0.3,color='k')
+    
+    param_pair = g.get_param_array(roots[0], None or [param1, param2])
+    
+    maxposts = [shivam_2d_bias.get_max_2dpost(g, r, param1=param1, param2=param2)[::-1] for r in roots]
+    
+    for p,m,c,l in zip(maxposts, markers, colors, labels):
+        ax.plot(*p,  ls='', marker=m, markersize=markersize, c=c,label='Peak ' + l, zorder=5)
+    
+    densities = [g.sample_analyser.get_density_grid(
+                    r, param_pair[0], param_pair[1],
+                    conts=g.settings.num_plot_contours,
+                    likes=g.settings.shade_meanlikes) for r in roots]
+    
+    for d,ls,c,l in zip(densities, linestyles, colors, labels):
+        ax.plot(*shivam_2d_bias.get_contour_line(sigma, g, d)[0].T, ls=ls, marker='',lw=lw, c=c, label=f'${sigma:.1f} \sigma$ ' + l)
+    
+    ax.plot(*shivam_2d_bias.get_contour_line(sigma, g, densities[0])[0].T, ls=ls, marker='',lw=lw, c='black')
+    
+    ax.set_xlabel(param_to_latex(param1))
+    ax.set_ylabel(param_to_latex(param2))
+    ax.legend(loc=(1,0))
+    return fig
+
+def get_stats(chain, is_chains, params2plot):
+    output_string = ''
+    for chain in is_chains:
+        ESS_base = chain.base.get_ESS_dict()
+        ESS_IS = chain.get_ESS_dict()
+
+        output_string += '\nFile: {}\n'.format(chain.filename)
+
+        base_mean, base_std = chain.base.get_mean(params2plot), chain.base.get_std(params2plot)
+        is_mean, is_std = chain.get_mean(params2plot), chain.get_std(params2plot)
+
+        output_string += '\nBaseline mean ± std\n'
+        for p,m,s in zip(params2plot, base_mean, base_std):
+            output_string += '\t{:<40} {:7n} ± {:7n}\n'.format(p, m, s)
+
+        output_string += '\nImportance sampled mean ± std\n'
+        for p,m,s in zip(params2plot, is_mean, is_std):
+            output_string += '\t{:<40} {:7n} ± {:7n}\n'.format(p, m, s)
+
+        output_string += '\nDelta parameter/std ± 1/sqrt(ESS)\n'
+        for p, bm, bs, im in zip(params2plot, base_mean, base_std, is_mean):
+            output_string += '\t{:<40} {:7n} ± {:7n}\n'.format(p, (im-bm)/bs, 1/np.sqrt(ESS_IS['Euclidean distance']))
+
+        output_string += '\nDelta parameter (n-sigma)\n'
+        for p, bm, im in zip(params2plot, base_mean, is_mean):
+            vals = chain.base.data[p]
+            mi, ma, si = [bm, im, 1] if bm < im else [im, bm, -1]
+            pval_base = np.sum(chain.base.get_weights()[(vals > mi)*(vals < ma)])/np.sum(chain.base.get_weights())
+            pval_is   = np.sum(chain.get_weights()[(vals > mi)*(vals < ma)])/np.sum(chain.get_weights())
+            output_string += '\t{:<40} {:7n} (base), {:7n} (cont)\n'.format(p, si*np.sqrt(2)*sp.special.erfinv(2*pval_base),
+                                                                                si*np.sqrt(2)*sp.special.erfinv(2*pval_is))
+
+        output_string += '\n2D bias\n'
+        param_combinations = np.array(list())
+        for p in itt.combinations(params2plot, 2):
+            output_string += '\n\t{:<40}\n\t{:<40} {:7n}\n'.format(*p, chain.get_2d_shift(p))
+
+        output_string += '\nDelta loglike (= -2*<delta chi^2>, want shifts of <~O(1))\n'
+        dl = chain.get_dloglike_stats()
+        output_string += '\tAverage: {:7n}\n'.format(dl[0])
+        output_string += '\tRMS:     {:7n}\n'.format(dl[1])
+        output_string += '\delta logZ:     {:7n}\n'.format(chain.get_delta_logz())
+
+        output_string += '\nEffective sample sizes (rough rule of thumb is want ~ESS_IS/ESS_BL > ~0.1 and ESS_IS > ~100)\n'
+        for key in ESS_base.keys():
+            output_string += '\t{:<30}\t{:7n}/{:7n} = {:7n}\n'.format(key, ESS_IS[key], ESS_base[key], ESS_IS[key]/ESS_base[key])
+
+        output_string += '\n\tTotal samples' + ' '*27 + '{}\n'.format(chain.N)
         
+    return output_string
+
+def triangle_plot(base_chain, is_chains, extra_chains, params2plot, labels, output, fig_format='pdf', base_plot=False, classic_kde=False):
+    samples = []
+    settings = {'smooth_scale_1D': 0.3, 'smooth_scale_2D': 0.4} if classic_kde else None
+    if base_plot:
+        samples.append(base_chain.get_MCSamples(settings=settings))
+    samples.extend([is_chain.get_MCSamples(settings=settings) for is_chain in is_chains])
+    samples.extend([c.get_MCSamples(settings=settings) for c in extra_chains])
+
+    g = plots.getSubplotPlotter()
+
+    g.triangle_plot(
+        samples,
+        params=params2plot,
+        legend_labels=['Baseline'] + labels if base_plot else labels
+    )
+
+    # Write some stats to the triangle plot
+    if len(is_chains) == 1:
+        chain = is_chains[0]
+
+        dl = chain.get_dloglike_stats()
+        text_note_1 = 'Average delta loglike: {:n}\n'.format(dl[0])
+        text_note_1 += 'RMS delta loglike: {:n}\n'.format(dl[1])
+
+        text_note_1 += '\nEffective sample sizes\n'
+        ESS_base = chain.base.get_ESS_dict()
+        ESS_IS = chain.get_ESS_dict()
+        for key in ESS_base.keys():
+            text_note_1 += '{}: {:.0f}/{:.0f} = {:.0%}\n'.format(key, ESS_IS[key], ESS_base[key], ESS_IS[key]/ESS_base[key])
+
+        text_note_1 += '\nTotal samples: {}\n'.format(chain.N)
+
+        base_mean, base_std = chain.base.get_mean(config['params2plot']), chain.base.get_std(config['params2plot'])
+        is_mean, is_std = chain.get_mean(config['params2plot']), chain.get_std(config['params2plot'])
+
+        text_note_2 = 'Baseline mean ± std\n'
+        for p,m,s in zip(param_to_label(config['params2plot']), base_mean, base_std):
+            text_note_2 += '${}$ {:3n} ± {:3n}\n'.format(p, m, s)
+
+        text_note_2 += '\nImportance sampled mean ± std\n'
+        for p,m,s in zip(param_to_label(config['params2plot']), is_mean, is_std):
+            text_note_2 += '${}$ {:3n} ± {:3n}\n'.format(p, m, s)
+
+        text_note_2 += '\nDelta parameter/std\n'
+        for p, bm, bs, im in zip(param_to_label(config['params2plot']), base_mean, base_std, is_mean):
+            text_note_2 += '${}$ {:3n}\n'.format(p, (im-bm)/bs)
+
+    g.export(output + '_triangle.' + fig_format)
+
+def plot_weights(is_chains, output, fig_format='pdf'):
+    for chain in is_chains:
+        fig, ax = plt.subplots()
+        ax.plot(chain.get_weights())
+        # ax.plot(chain.base.get_weights())
+        plt.savefig('{}_{}_weights.{}'.format(output, chain.name, fig_format))
+
+def get_markdown_stats(is_chains, labels, params2plot):
+    pairs = list(itt.combinations(params2plot, 2))
+    output_string = '\pagenumbering{gobble}\n\n'
+    output_string += '| | ' + '| '.join(['$\Delta {}/\sigma$'.format(param_to_label(p)) for p in params2plot]) + ' | ' + ('| '.join(['2D bias ${} \\times {}$'.format(*param_to_label(p)) for p in pairs]) if len(pairs) > 1 else '2D bias') + ' |\n'
+    output_string += '| -: |' + ' :-: |'*(len(params2plot)+1 + len(pairs)) + '\n'
+    for chain, label in zip(is_chains, labels):
+        ESS_base = chain.base.get_ESS_dict()
+        ESS_IS = chain.get_ESS_dict()
+
+        base_mean, base_std = chain.base.get_mean(params2plot), chain.base.get_std(params2plot)
+        is_mean, is_std = chain.get_mean(params2plot), chain.get_std(params2plot)
+
+        biases_1d = (is_mean - base_mean)/base_std
+        error_1d = 1/np.sqrt(ESS_IS['Euclidean distance'])
+        biases_2d = ['${:.3f}$'.format(chain.get_2d_shift(p)) for p in pairs]
+
+        output_string += '| {} | '.format(label) + ' |'.join(['${:+.3f} \\pm {:.3f}$'.format(b, error_1d) for b in biases_1d]) + ' | ' + ' |'.join(biases_2d) + ' |\n'
+
+    return output_string
+
+def plot_summary(base_chain, is_chains, params2plot, output, fig_format='pdf'):
+    chains = [base_chain]
+    chains.extend(is_chains)
+    c = ChainConsumer()
+    for i, chain in zip(range(len(chains)), chains):
+        c.add_chain(chain.on_params(params2plot), parameters=param_to_latex(params2plot).tolist(), weights=chain.get_weights(), name='chain{}'.format(i))
+    c.plotter.plot_summary(errorbar=True, truth='chain0', include_truth_chain=True, filename='{}_summary.{}'.format(output, fig_format))
 
 def main():
     parser = argparse.ArgumentParser(description = '')
@@ -567,6 +751,9 @@ def main():
     parser.add_argument('--shift-2d', dest = 'shift_2d', action='store_true',
                     help = "compute 2d bias using Shivam's code.")
 
+    parser.add_argument('--plot-2d', dest = 'plot_2d', action='store_true',
+                    help = "plot 2d contours using Shivam's code.")
+
     parser.add_argument('--all', dest = 'all', action='store_true',
                     help = 'same as --stats --triangle-plot --base-plot.')
 
@@ -586,184 +773,74 @@ def main():
                     default = 'weight', required = False,
                     help = 'define how the baseline weights will be determined ("weight": weight, "log_weight": exp(log_weight)*old_weight, "old_weight": old_weight.')
     
+    parser.add_argument('--config', dest = 'config', required = False,
+                    help = 'Loads config yaml file.')
+
+    parser.add_argument('--debug', dest = 'debug', action='store_true', default=False, required=False,
+                    help = 'Increases verbosity.')
+    
     args = parser.parse_args()
+
+    with open(args.config, 'r') as file:
+        config = yaml.safe_load(file)
+
+    if args.debug:
+        global verbose
+        verbose = True
 
     if args.all:
         args.stats = True
         args.triangle_plot = True
         args.base_plot = True
-        args.markdown_stats = True
+        # args.markdown_stats = True
+        args.plot_2d = True
         
     base_chain = Chain(args.chain, args.boosted, args.base_weight)
     is_chains = [ImportanceChain(iw_filename, base_chain) for i, iw_filename in enumerate(args.importance_weights)]
     extra_chains = [Chain(f) for f in args.extra_chains] if args.extra_chains else []
 
-    N_IS = len(is_chains)
-
-    if args.stats: #we should really probably change this to output in a more machine-readable format
-        output_string = ''
-        for chain in is_chains:
-            ESS_base = chain.base.get_ESS_dict()
-            ESS_IS = chain.get_ESS_dict()
-
-            output_string += '\nFile: {}\n'.format(chain.filename)
-
-            base_mean, base_std = chain.base.get_mean(params2plot), chain.base.get_std(params2plot)
-            is_mean, is_std = chain.get_mean(params2plot), chain.get_std(params2plot)
-
-            output_string += '\nBaseline mean ± std\n'
-            for p,m,s in zip(params2plot, base_mean, base_std):
-                output_string += '\t{:<40} {:7n} ± {:7n}\n'.format(p, m, s)
-
-            output_string += '\nImportance sampled mean ± std\n'
-            for p,m,s in zip(params2plot, is_mean, is_std):
-                output_string += '\t{:<40} {:7n} ± {:7n}\n'.format(p, m, s)
-
-            output_string += '\nDelta parameter/std ± 1/sqrt(ESS)\n'
-            for p, bm, bs, im in zip(params2plot, base_mean, base_std, is_mean):
-                output_string += '\t{:<40} {:7n} ± {:7n}\n'.format(p, (im-bm)/bs, 1/np.sqrt(ESS_IS['Euclidean distance']))
-
-            output_string += '\nDelta parameter (n-sigma)\n'
-            for p, bm, im in zip(params2plot, base_mean, is_mean):
-                vals = chain.base.data[p]
-                mi, ma, si = [bm, im, 1] if bm < im else [im, bm, -1]
-                pval_base = np.sum(chain.base.get_weights()[(vals > mi)*(vals < ma)])/np.sum(chain.base.get_weights())
-                pval_is   = np.sum(chain.get_weights()[(vals > mi)*(vals < ma)])/np.sum(chain.get_weights())
-                output_string += '\t{:<40} {:7n} (base), {:7n} (cont)\n'.format(p, si*np.sqrt(2)*sp.special.erfinv(2*pval_base),
-                                                                                   si*np.sqrt(2)*sp.special.erfinv(2*pval_is))
-
-            output_string += '\n2D bias\n'
-            param_combinations = np.array(list())
-            for p in itt.combinations(params2plot, 2):
-                output_string += '\n\t{:<40}\n\t{:<40} {:7n}\n'.format(*p, chain.get_2d_shift(p))
-
-            output_string += '\nDelta loglike (= -2*<delta chi^2>, want shifts of <~O(1))\n'
-            dl = chain.get_dloglike_stats()
-            output_string += '\tAverage: {:7n}\n'.format(dl[0])
-            output_string += '\tRMS:     {:7n}\n'.format(dl[1])
-            output_string += '\delta logZ:     {:7n}\n'.format(chain.get_delta_logz())
-
-            output_string += '\nEffective sample sizes (rough rule of thumb is want ~ESS_IS/ESS_BL > ~0.1 and ESS_IS > ~100)\n'
-            for key in ESS_base.keys():
-                output_string += '\t{:<30}\t{:7n}/{:7n} = {:7n}\n'.format(key, ESS_IS[key], ESS_base[key], ESS_IS[key]/ESS_base[key])
-
-            output_string += '\n\tTotal samples' + ' '*27 + '{}\n'.format(chain.N)
-
+    if args.stats:
+        output_string = get_stats(base_chain, is_chains, config['params2plot'])
+        if verbose:
+            print(output_string.replace('\n', '\r\n'))
         with open(args.output + '_stats.txt', 'w') as f:
             f.write(output_string)
 
-        print(output_string.replace('\n', '\r\n'))
-
     # Plot IS weights
     if args.plot_weights:
-        for chain in is_chains:
-            fig, ax = plot.subplots()
-            ax.plot(chain.get_weights())
-            # ax.plot(chain.base.get_weights())
-            plot.savefig('{}_{}_weights.{}'.format(args.output, chain.name, args.fig_format))
+        plot_weights(is_chains, output, fig_format='pdf')
 
     # Make triangle plot
     if args.triangle_plot:
-        samples = []
-        settings = {'smooth_scale_1D': 0.3, 'smooth_scale_2D': 0.4} if args.classic_kde else None
-        if args.base_plot:
-            samples.append(base_chain.get_MCSamples(settings=settings))
-        samples.extend([is_chain.get_MCSamples(settings=settings) for is_chain in is_chains])
-        samples.extend([c.get_MCSamples(settings=settings) for c in extra_chains])
+        triangle_plot(
+            base_chain,
+            is_chains,
+            extra_chains,
+            config['params2plot'],
+            args.labels,
+            args.output,
+            args.fig_format,
+            args.base_plot,
+            args.classic_kde,
+            )
+    
+    if args.plot_2d:
+        from matplotlib.backends.backend_pdf import PdfPages
 
-        g = plots.getSubplotPlotter()
-
-        g.triangle_plot(
-            samples,
-            params=params2plot,
-            legend_labels=['Baseline'] + args.labels if args.base_plot else args.labels
-        )
-
-        # Write some stats to the triangle plot
-        if len(is_chains) == 1:
-            chain = is_chains[0]
-
-            dl = chain.get_dloglike_stats()
-            text_note_1 = 'Average delta loglike: {:n}\n'.format(dl[0])
-            text_note_1 += 'RMS delta loglike: {:n}\n'.format(dl[1])
-
-            text_note_1 += '\nEffective sample sizes\n'
-            ESS_base = chain.base.get_ESS_dict()
-            ESS_IS = chain.get_ESS_dict()
-            for key in ESS_base.keys():
-                text_note_1 += '{}: {:.0f}/{:.0f} = {:.0%}\n'.format(key, ESS_IS[key], ESS_base[key], ESS_IS[key]/ESS_base[key])
-
-            text_note_1 += '\nTotal samples: {}\n'.format(chain.N)
-
-#            g.add_text_left(text_note_1, ax=(0,0), x=1.03, y=0.35, fontsize=7)
-
-            base_mean, base_std = chain.base.get_mean(params2plot), chain.base.get_std(params2plot)
-            is_mean, is_std = chain.get_mean(params2plot), chain.get_std(params2plot)
-
-            text_note_2 = 'Baseline mean ± std\n'
-            for p,m,s in zip(param_to_label(params2plot), base_mean, base_std):
-                text_note_2 += '${}$ {:3n} ± {:3n}\n'.format(p, m, s)
-
-            text_note_2 += '\nImportance sampled mean ± std\n'
-            for p,m,s in zip(param_to_label(params2plot), is_mean, is_std):
-                text_note_2 += '${}$ {:3n} ± {:3n}\n'.format(p, m, s)
-
-            text_note_2 += '\nDelta parameter/std\n'
-            for p, bm, bs, im in zip(param_to_label(params2plot), base_mean, base_std, is_mean):
-                text_note_2 += '${}$ {:3n}\n'.format(p, (im-bm)/bs)
-
-            #g.add_text_left(text_note_2, ax=(1,1), x=1.03, y=0.35, fontsize=7)
-            #g.add_text_left(text_note_2, ax=(1,1), x=1.03, y=0.5, fontsize=7)
-
-        g.export(args.output + '_triangle.' + args.fig_format)
-
-    if args.shift_2d:
-        output_string = '\n2D shifts\n'
-        for is_chain in is_chains:
-            output_string += '\nFile: {}\n'.format(is_chain.filename)
-            for p in itt.combinations(params2plot, 2):
-                shifts = shivam_2d_bias.compute_2d_bias(base_chain.get_MCSamples(), is_chain.get_MCSamples(),
-                        base_chain.get_fiducial(extra={'cosmological_parameters--sigma_8': 0.8430599612}),
-                        *p, *param_to_latex(p), 0.01,
-                        '{}_{}_{}_{}_2d_bias.{}'.format(args.output, is_chain.filename.split('/')[-1], *p, args.fig_format))
-
-                output_string += '\n\t{}\n\t{}\n'.format(*p)
-                for s in shifts.keys():
-                    output_string += '\n\t\t{:<30}: {:3n}'.format(s, shifts[s])
-
-            with open('{}_{}_{}_{}_2d_bias.txt'.format(args.output, is_chain.filename.split('/')[-1], *p), 'w') as f:
-                f.write(output_string)
-
-        print(output_string.replace('\n', '\r\n'))
+        with PdfPages(args.output + '_plot_2d.pdf') as pdf:
+            for param1, param2, sigma in config['pairs_plot_2d']:
+                fig = plot_2d(param1, param2, base_chain, is_chains, config['truth'], args.labels, sigma)
+                # plt.tight_layout()
+                pdf.savefig(fig, bbox_inches = "tight")
+                plt.close()
 
     if args.markdown_stats:
-        pairs = list(itt.combinations(params2plot, 2))
-        output_string = '\pagenumbering{gobble}\n\n'
-        output_string += '| | ' + '| '.join(['$\Delta {}/\sigma$'.format(param_to_label(p)) for p in params2plot]) + ' | ' + ('| '.join(['2D bias ${} \\times {}$'.format(*param_to_label(p)) for p in pairs]) if len(pairs) > 1 else '2D bias') + ' |\n'
-        output_string += '| -: |' + ' :-: |'*(len(params2plot)+1 + len(pairs)) + '\n'
-        for chain, label in zip(is_chains, args.labels):
-            ESS_base = chain.base.get_ESS_dict()
-            ESS_IS = chain.get_ESS_dict()
-
-            base_mean, base_std = chain.base.get_mean(params2plot), chain.base.get_std(params2plot)
-            is_mean, is_std = chain.get_mean(params2plot), chain.get_std(params2plot)
-
-            biases_1d = (is_mean - base_mean)/base_std
-            error_1d = 1/np.sqrt(ESS_IS['Euclidean distance'])
-            biases_2d = ['${:.3f}$'.format(chain.get_2d_shift(p)) for p in pairs]
-
-            output_string += '| {} | '.format(label) + ' |'.join(['${:+.3f} \\pm {:.3f}$'.format(b, error_1d) for b in biases_1d]) + ' | ' + ' |'.join(biases_2d) + ' |\n'
-
+        output_string = get_markdown_stats(is_chains, args.labels, config['params2plot'])
         with open(args.output + '_stats.md', 'w') as f:
             f.write(output_string)
 
     if args.summary:
-        chains = [base_chain]
-        chains.extend(is_chains)
-        c = ChainConsumer()
-        for i, chain in zip(range(len(chains)), chains):
-            c.add_chain(chain.on_params(params2plot), parameters=param_to_latex(params2plot).tolist(), weights=chain.get_weights(), name='chain{}'.format(i))
-        c.plotter.plot_summary(errorbar=True, truth='chain0', include_truth_chain=True, filename='{}_summary.{}'.format(args.output, args.fig_format))
+        plot_summary(base_chain, is_chains, config['params2plot'], args.output, args.fig_format)
 
 if __name__ == "__main__":
     main()
