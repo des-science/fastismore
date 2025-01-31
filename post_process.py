@@ -7,14 +7,13 @@ import scipy as sp
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
-import argparse, configparser, copy, yaml
+import argparse, configparser, copy, yaml, functools
 import itertools as itt
 
-from getdist import MCSamples, plots
+import getdist as gd
+import getdist.plots
 from getdist.paramnames import makeList
 from chainconsumer import ChainConsumer
-
-import shivam_2d_bias
 
 verbose = False
 
@@ -334,26 +333,24 @@ class Chain:
 
         return self.ranges
 
+    @functools.cache
     def get_MCSamples(self, settings=None, params=None):
         
         if params == None:
             params = self.get_params()
 
-        if not hasattr(self, '_mcsamples'):
-            self._mcsamples = MCSamples(
-                samples=self.on_params(params=params),
-                weights=self.get_weights(),
-                #loglikes=self.get_likes(),
+        return gd.MCSamples(
+            samples=self.on_params(params=params),
+            weights=self.get_weights(),
+            #loglikes=self.get_likes(),
 
-                ranges=self.get_ranges(params=params),
-                sampler='nested' if self.get_sampler() in ['multinest', 'polychord'] else 'mcmc',
+            ranges=self.get_ranges(params=params),
+            sampler='nested' if self.get_sampler() in ['multinest', 'polychord'] else 'mcmc',
 
-                names=params,
-                labels=[l for l in self.get_labels(params=params)],
-                settings=settings,
-            )
-
-        return self._mcsamples
+            names=params,
+            labels=[l for l in self.get_labels(params=params)],
+            settings=settings,
+        )
 
     def get_weights(self):
         if self.weight_option == 'weight' and 'weight' in self.data.keys():
@@ -418,6 +415,35 @@ class Chain:
                     # 'Inverse entropy': -N*np.log2(N)/(-N*np.log2(N) + (N - 1)*(-np.sum(w[w>0]*np.log2(w[w>0])))),
                     }
         return self.ESS_dict
+
+    @functools.cache
+    def get_density_grid(self, param1, param2):
+        g = gd.plots.getSinglePlotter()
+        samples = self.get_MCSamples()
+        return g.sample_analyser.get_density_grid(samples, *g.get_param_array(samples, [param1, param2]))
+
+    def get_contour_line(self, sigma, param1, param2):
+        plt.subplots(1)
+        density = self.get_density_grid(param1, param2)
+        contour_levels = density.getContourLevels([sp.special.erf(sigma/np.sqrt(2))])
+        vertices = plt.contour(density.x, density.y, density.P, contour_levels) \
+                      .collections[0].get_paths()[0].vertices
+        plt.close()
+        return vertices
+    
+    def get_peak_2d(self, param1, param2):
+        density = self.get_density_grid(param1, param2)
+        j, i = np.unravel_index(np.argmax(density.P), density.P.shape)
+        return density.x[i], density.y[j]
+
+    def find_sigma_of_point(self, point, param1, param2):
+        # finds the distance between point and closest vertex in nsigma contour
+        distance_to_nsigma_contour = lambda sigma: np.min(
+            # distances between point and all nsigma contour vertices
+            np.linalg.norm(self.get_contour_line(sigma, param1, param2) - point, axis=1)
+            )
+        # returns nsigma of contour that is closest to point
+        return sp.optimize.minimize_scalar(distance_to_nsigma_contour, bounds=[1e-3, 5]).x
 
 class ImportanceChain(Chain):
     """Description: object to load the importance weights, plot and compute statistics.
@@ -530,10 +556,14 @@ class ImportanceChain(Chain):
     #     mi, ma = [base_mean, is_mean] if base_mean < is_mean else [is_mean, base_mean]
     #     return sum(self.base.get_weights()[(vals > mi)*(vals < ma)])
 
-    def get_2d_shift(self, params):
-        inv_cov = np.linalg.inv(self.base.get_MCSamples().cov(params))
-        p = self.get_mean(params) - self.base.get_mean(params)
-        return np.einsum('i,ij,j', p, inv_cov, p)
+    def get_2d_shift(self, param1, param2, base_posterior=True):
+        # inv_cov = np.linalg.inv(self.base.get_MCSamples().cov(params))
+        # p = self.get_mean(params) - self.base.get_mean(params)
+        # return np.einsum('i,ij,j', p, inv_cov, p)
+        return self.base.find_sigma_of_point(self.get_peak_2d(param1, param2), param1, param2) \
+             if base_posterior \
+             else self.find_sigma_of_point(self.base.get_peak_2d(param1, param2), param1, param2)
+        
     
     def load_data(self, *args, **kwargs):
         nsample = self.base.nsample if hasattr(self.base, 'nsample') else 0
@@ -543,7 +573,7 @@ class ImportanceChain(Chain):
 
 # ---------------- Functions to produce outputs ---------------------
 
-def plot_2d(param1, param2, base_chain, is_chains, truth, labels, sigma=0.3):
+def plot_2d(param1, param2, chains, truth, labels, sigma=0.3):
     fig, ax = plt.subplots()
 
     linestyles = ['-', ':', '--', '-.', (0, (3, 1, 1, 1, 1, 1))]
@@ -552,32 +582,14 @@ def plot_2d(param1, param2, base_chain, is_chains, truth, labels, sigma=0.3):
     markersize=6
     lw=1.8
     
-    samples = [base_chain.get_MCSamples()]
-    samples.extend([c.get_MCSamples() for c in is_chains])
+    ax.axvline(truth[param1], ls='--',alpha=0.3,color='k')
+    ax.axhline(truth[param2], ls='--',alpha=0.3,color='k')
     
-    roots = makeList(samples)
+    for chain,ls,m,c,l in zip(chains, linestyles, markers, colors, labels):
+        ax.plot(*chain.get_peak_2d(param1, param2),  ls='', marker=m, markersize=markersize, c=c,label='Peak ' + l, zorder=5)
     
-    g = plots.getSinglePlotter()
-    
-    ax.axvline(truth[param1],ls='--',alpha=0.3,color='k')
-    ax.axhline(truth[param2],ls='--',alpha=0.3,color='k')
-    
-    param_pair = g.get_param_array(roots[0], None or [param1, param2])
-    
-    maxposts = [shivam_2d_bias.get_max_2dpost(g, r, param1=param1, param2=param2)[::-1] for r in roots]
-    
-    for p,m,c,l in zip(maxposts, markers, colors, labels):
-        ax.plot(*p,  ls='', marker=m, markersize=markersize, c=c,label='Peak ' + l, zorder=5)
-    
-    densities = [g.sample_analyser.get_density_grid(
-                    r, param_pair[0], param_pair[1],
-                    conts=g.settings.num_plot_contours,
-                    likes=g.settings.shade_meanlikes) for r in roots]
-    
-    for d,ls,c,l in zip(densities, linestyles, colors, labels):
-        ax.plot(*shivam_2d_bias.get_contour_line(sigma, g, d)[0].T, ls=ls, marker='',lw=lw, c=c, label=f'${sigma:.1f} \sigma$ ' + l)
-    
-    ax.plot(*shivam_2d_bias.get_contour_line(sigma, g, densities[0])[0].T, ls=ls, marker='',lw=lw, c='black')
+    for chain,ls,m,c,l in zip(chains, linestyles, markers, colors, labels):
+        ax.plot(*chain.get_contour_line(sigma, param1, param2).T, ls=ls, marker='',lw=lw, c=c, label=f'${sigma:.1f} \sigma$ ' + l)
     
     ax.set_xlabel(param_to_latex(param1))
     ax.set_ylabel(param_to_latex(param2))
@@ -619,7 +631,7 @@ def get_stats(chain, is_chains, params2plot):
         output_string += '\n2D bias\n'
         param_combinations = np.array(list())
         for p in itt.combinations(params2plot, 2):
-            output_string += '\n\t{:<40}\n\t{:<40} {:7n}\n'.format(*p, chain.get_2d_shift(p))
+            output_string += '\n\t{:<40}\n\t{:<40} {:7n} (base), {:7n} (cont)\n'.format(*p, chain.get_2d_shift(p[0], p[1]), chain.get_2d_shift(p[0], p[1], False))
 
         output_string += '\nDelta loglike (= -2*<delta chi^2>, want shifts of <~O(1))\n'
         dl = chain.get_dloglike_stats()
@@ -643,7 +655,7 @@ def triangle_plot(base_chain, is_chains, extra_chains, params2plot, labels, outp
     samples.extend([is_chain.get_MCSamples(settings=settings) for is_chain in is_chains])
     samples.extend([c.get_MCSamples(settings=settings) for c in extra_chains])
 
-    g = plots.getSubplotPlotter()
+    g = gd.plots.getSubplotPlotter()
 
     g.triangle_plot(
         samples,
@@ -749,10 +761,10 @@ def main():
                     help = 'do summary plot.')
 
     parser.add_argument('--shift-2d', dest = 'shift_2d', action='store_true',
-                    help = "compute 2d bias using Shivam's code.")
+                    help = "compute 2d bias.")
 
     parser.add_argument('--plot-2d', dest = 'plot_2d', action='store_true',
-                    help = "plot 2d contours using Shivam's code.")
+                    help = "plot 2d contours.")
 
     parser.add_argument('--all', dest = 'all', action='store_true',
                     help = 'same as --stats --triangle-plot --base-plot.')
@@ -783,6 +795,8 @@ def main():
 
     with open(args.config, 'r') as file:
         config = yaml.safe_load(file)
+        
+    label_dict.update(config.get('param_labels', {}))
 
     if args.debug:
         global verbose
@@ -829,7 +843,7 @@ def main():
 
         with PdfPages(args.output + '_plot_2d.pdf') as pdf:
             for param1, param2, sigma in config['pairs_plot_2d']:
-                fig = plot_2d(param1, param2, base_chain, is_chains, config['truth'], args.labels, sigma)
+                fig = plot_2d(param1, param2, [base_chain, *is_chains, *extra_chains], config['truth'], ['Baseline'] + args.labels, sigma)
                 # plt.tight_layout()
                 pdf.savefig(fig, bbox_inches = "tight")
                 plt.close()
