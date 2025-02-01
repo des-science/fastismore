@@ -3,6 +3,7 @@
 
 import numpy as np
 import scipy as sp
+import contourpy
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -16,23 +17,6 @@ from getdist.paramnames import makeList
 from chainconsumer import ChainConsumer
 
 verbose = False
-
-mpl.rcParams['figure.dpi']= 150
-plt.rcParams['savefig.dpi'] = 300
-mpl.rcParams['figure.facecolor']= 'white'
-mpl.rcParams['text.usetex']= True
-mpl.rcParams['font.family']= 'serif'
-mpl.rcParams['font.serif']= 'cm'
-mpl.rcParams['font.size']= 10
-mpl.rcParams['pgf.texsystem']= "pdflatex"
-mpl.rcParams['pgf.rcfonts']= False
-mpl.rcParams['lines.linewidth'] = 1.75
-
-figwidth = 440/72.27
-golden_ratio = 0.5*(1+5**0.5)
-mpl.rcParams['figure.figsize'] = (figwidth, figwidth/golden_ratio)
-
-mpl.rcParams['axes.prop_cycle'] = mpl.cycler(color=['#000000', '#3E89DA', '#FEFEFE', '#F87A44']) 
 
 not_param = [
     'like',
@@ -385,6 +369,21 @@ class Chain:
     def get_mean(self, params):
         return self.get_MCSamples().mean(params)
 
+    def get_bounds(self, param, sigma=1):
+        mean = self.get_mean([param])[0]
+        vals = self.on_params([param])[:,0]
+        weights = self.get_weights()
+
+        i = np.argsort(vals)
+        
+        iright = i[vals[i] > mean]
+        ileft  = i[vals[i] < mean][::-1]
+
+        right = vals[iright[np.argmax(np.cumsum(weights[iright]) > sp.special.erf(sigma/np.sqrt(2))/2)]]
+        left  = vals[ileft[ np.argmax(np.cumsum(weights[ileft])  > sp.special.erf(sigma/np.sqrt(2))/2)]]
+
+        return left, mean, right
+
     def get_ESS(self):
         """compute and return effective sample size."""
 
@@ -418,18 +417,15 @@ class Chain:
 
     @functools.cache
     def get_density_grid(self, param1, param2):
-        g = gd.plots.getSinglePlotter()
-        samples = self.get_MCSamples()
-        return g.sample_analyser.get_density_grid(samples, *g.get_param_array(samples, [param1, param2]))
+        return gd.plots.MCSampleAnalysis([]).get_density_grid(
+                self.get_MCSamples(),
+                *[gd.paramnames.ParamInfo(name=p) for p in [param1, param2]]
+            )
 
-    def get_contour_line(self, sigma, param1, param2):
-        plt.subplots(1)
+    def get_contour_vertices(self, sigma, param1, param2):
         density = self.get_density_grid(param1, param2)
         contour_levels = density.getContourLevels([sp.special.erf(sigma/np.sqrt(2))])
-        vertices = plt.contour(density.x, density.y, density.P, contour_levels) \
-                      .collections[0].get_paths()[0].vertices
-        plt.close()
-        return vertices
+        return contourpy.contour_generator(density.x, density.y, density.P).lines(contour_levels)[0]
     
     def get_peak_2d(self, param1, param2):
         density = self.get_density_grid(param1, param2)
@@ -440,10 +436,10 @@ class Chain:
         # finds the distance between point and closest vertex in nsigma contour
         distance_to_nsigma_contour = lambda sigma: np.min(
             # distances between point and all nsigma contour vertices
-            np.linalg.norm(self.get_contour_line(sigma, param1, param2) - point, axis=1)
+            np.linalg.norm(self.get_contour_vertices(sigma, param1, param2) - point, axis=1)
             )
         # returns nsigma of contour that is closest to point
-        return sp.optimize.minimize_scalar(distance_to_nsigma_contour, bounds=[1e-3, 5]).x
+        return sp.optimize.minimize_scalar(distance_to_nsigma_contour, bounds=[1e-4, 8]).x
 
 class ImportanceChain(Chain):
     """Description: object to load the importance weights, plot and compute statistics.
@@ -469,7 +465,7 @@ class ImportanceChain(Chain):
 
     def get_ESS_NW(self, weight_by_multiplicity=True):
         """compute and return effective sample size of is chain. 
-        Is a little more correct than using euclidean ESS of final weights in how it treats the fact that initial chain is weighted, 
+        Is a little more correct (?) than using euclidean ESS of final weights in how it treats the fact that initial chain is weighted, 
         so we shouldn't be able to get a higher effective sample size by adding additional weights. Difference is small in practice.
         If is chain is identical to baseline, then just equals full sample size.
         insensitive to multiplicative scaling, i.e. if IS chain shows all points exactly half as likely, will not show up in ess,
@@ -494,9 +490,6 @@ class ImportanceChain(Chain):
     
     def get_mean_err(self, params):
         return self.base.get_MCSamples().std(params)/self.get_ESS()**0.5
-
-    def get_mean(self, params):
-        return self.get_MCSamples().mean(params)
 
     def on_params(self, *args, **kwargs):
         return self.base.on_params(*args, **kwargs)
@@ -550,11 +543,21 @@ class ImportanceChain(Chain):
     def get_fiducial(self, *args, **kwargs):
         return self.base.get_fiducial(*args, **kwargs)
     
-    # def get_1d_shift_integrated(self, param):
-    #     base_mean, is_mean = self.base.get_mean(param), self.get_mean(param)
-    #     vals = self.on_params(param)
-    #     mi, ma = [base_mean, is_mean] if base_mean < is_mean else [is_mean, base_mean]
-    #     return sum(self.base.get_weights()[(vals > mi)*(vals < ma)])
+    def get_1d_shift(self, param):
+        
+        left, right, signal = self.base.get_mean(param), self.get_mean(param), 1
+        if left > right:
+            left, right = right, left
+            signal = -1
+
+        vals = self.base.data[param]
+        mask = (vals > left) * (vals < right)
+
+        pval_base = np.sum(self.base.get_weights()[mask])/np.sum(self.base.get_weights())
+        pval_is   = np.sum(self.get_weights()[mask])/np.sum(self.get_weights())
+
+        return signal * np.sqrt(2) * sp.special.erfinv(2*pval_base), \
+               signal * np.sqrt(2) * sp.special.erfinv(2*pval_is)
 
     def get_2d_shift(self, param1, param2, base_posterior=True):
         # inv_cov = np.linalg.inv(self.base.get_MCSamples().cov(params))
@@ -564,6 +567,17 @@ class ImportanceChain(Chain):
              if base_posterior \
              else self.find_sigma_of_point(self.base.get_peak_2d(param1, param2), param1, param2)
         
+    def get_jaccard_index(self, sigma, param1, param2):
+        """Returns the Jaccard index between baseline and contaminated n-sigma contours.
+           Jaccard index is the ratio intersection/union of the two sets. Its value is 0
+           when there is no overlap and 1 when there's complete overlap."""
+        import shapely as shp
+        poly_baseline = shp.geometry.Polygon(self.base.get_contour_vertices(sigma, param1, param2))
+        poly_contaminated = shp.geometry.Polygon(self.get_contour_vertices(sigma, param1, param2))
+
+        intersection = poly_baseline.intersection(poly_contaminated)
+        union = poly_baseline.union(poly_contaminated)
+        return intersection.area/union.area
     
     def load_data(self, *args, **kwargs):
         nsample = self.base.nsample if hasattr(self.base, 'nsample') else 0
@@ -589,15 +603,33 @@ def plot_2d(param1, param2, chains, truth, labels, sigma=0.3):
         ax.plot(*chain.get_peak_2d(param1, param2),  ls='', marker=m, markersize=markersize, c=c,label='Peak ' + l, zorder=5)
     
     for chain,ls,m,c,l in zip(chains, linestyles, markers, colors, labels):
-        ax.plot(*chain.get_contour_line(sigma, param1, param2).T, ls=ls, marker='',lw=lw, c=c, label=f'${sigma:.1f} \sigma$ ' + l)
+        ax.plot(*chain.get_contour_vertices(sigma, param1, param2).T, ls=ls, marker='',lw=lw, c=c, label=f'${sigma:.1f} \sigma$ ' + l)
     
     ax.set_xlabel(param_to_latex(param1))
     ax.set_ylabel(param_to_latex(param2))
     ax.legend(loc=(1,0))
     return fig
 
+def plot_1d(param, chains, labels, sigma=0.3):
+
+    fig, axes = plt.subplots()
+
+    l, m, r = chains[0].base.get_bounds(param, sigma)
+    plt.fill_betweenx([-0.7,0.3+len(chains)], l, r, color='#eee')
+
+    for i,(l,m,r) in enumerate([chain.get_bounds(param, sigma) for chain in chains]):
+        plt.plot([l,r], [i,i])
+        plt.scatter(m, i)
+
+    plt.gca().set_yticks(np.arange(len(chains)))
+    plt.gca().set_yticklabels(labels)
+    plt.ylim(-0.3 + len(chains),-0.7)
+    
+    return fig
+
 def get_stats(chain, is_chains, params2plot):
     output_string = ''
+    params2plot = tuple(params2plot)
     for chain in is_chains:
         ESS_base = chain.base.get_ESS_dict()
         ESS_IS = chain.get_ESS_dict()
@@ -617,31 +649,35 @@ def get_stats(chain, is_chains, params2plot):
 
         output_string += '\nDelta parameter/std ± 1/sqrt(ESS)\n'
         for p, bm, bs, im in zip(params2plot, base_mean, base_std, is_mean):
-            output_string += '\t{:<40} {:7n} ± {:7n}\n'.format(p, (im-bm)/bs, 1/np.sqrt(ESS_IS['Euclidean distance']))
+            output_string += '\t{:<40} {:8.4f} ± {:6.4f}\n'.format(p, (im-bm)/bs, 1/np.sqrt(ESS_IS['Euclidean distance']))
 
         output_string += '\nDelta parameter (n-sigma)\n'
-        for p, bm, im in zip(params2plot, base_mean, is_mean):
-            vals = chain.base.data[p]
-            mi, ma, si = [bm, im, 1] if bm < im else [im, bm, -1]
-            pval_base = np.sum(chain.base.get_weights()[(vals > mi)*(vals < ma)])/np.sum(chain.base.get_weights())
-            pval_is   = np.sum(chain.get_weights()[(vals > mi)*(vals < ma)])/np.sum(chain.get_weights())
-            output_string += '\t{:<40} {:7n} (base), {:7n} (cont)\n'.format(p, si*np.sqrt(2)*sp.special.erfinv(2*pval_base),
-                                                                                si*np.sqrt(2)*sp.special.erfinv(2*pval_is))
+        for p in params2plot:
+            output_string += '\t{:<40} {:8.4f} (base), {:8.4f} (cont)\n'.format(p,
+                *chain.get_1d_shift(p)
+            )
 
-        output_string += '\n2D bias\n'
+        output_string += '\n2D contour overlap & peak bias\n'
         param_combinations = np.array(list())
         for p in itt.combinations(params2plot, 2):
-            output_string += '\n\t{:<40}\n\t{:<40} {:7n} (base), {:7n} (cont)\n'.format(*p, chain.get_2d_shift(p[0], p[1]), chain.get_2d_shift(p[0], p[1], False))
+            output_string += '\n\t{:<40} {:8.4f} (1σ),   {:8.4f} (2σ)\n\t{:<40} {:8.4f} (base), {:8.4f} (cont)\n'.format(
+                p[0],
+                chain.get_jaccard_index(1, p[0], p[1]),
+                chain.get_jaccard_index(2, p[0], p[1]),
+                p[1],
+                chain.get_2d_shift(p[0], p[1]),
+                chain.get_2d_shift(p[0], p[1], False)
+            )
 
         output_string += '\nDelta loglike (= -2*<delta chi^2>, want shifts of <~O(1))\n'
         dl = chain.get_dloglike_stats()
-        output_string += '\tAverage: {:7n}\n'.format(dl[0])
-        output_string += '\tRMS:     {:7n}\n'.format(dl[1])
-        output_string += '\delta logZ:     {:7n}\n'.format(chain.get_delta_logz())
+        output_string += '\tAverage: {:10.4f}\n'.format(dl[0])
+        output_string += '\tRMS:     {:10.4f}\n'.format(dl[1])
+        output_string += '\nDelta logZ:     {:10.4f}\n'.format(chain.get_delta_logz())
 
-        output_string += '\nEffective sample sizes (rough rule of thumb is want ~ESS_IS/ESS_BL > ~0.1 and ESS_IS > ~100)\n'
+        output_string += '\nEffective sample sizes (want ~ESS_IS/ESS_BL > ~0.1 and ESS_IS > ~100)\n'
         for key in ESS_base.keys():
-            output_string += '\t{:<30}\t{:7n}/{:7n} = {:7n}\n'.format(key, ESS_IS[key], ESS_base[key], ESS_IS[key]/ESS_base[key])
+            output_string += '\t{:<30}\t{:9.2f} / {:9.2f} = {:7.4f}\n'.format(key, ESS_IS[key], ESS_base[key], ESS_IS[key]/ESS_base[key])
 
         output_string += '\n\tTotal samples' + ' '*27 + '{}\n'.format(chain.N)
         
@@ -663,38 +699,9 @@ def triangle_plot(base_chain, is_chains, extra_chains, params2plot, labels, outp
         legend_labels=['Baseline'] + labels if base_plot else labels
     )
 
-    # Write some stats to the triangle plot
-    if len(is_chains) == 1:
-        chain = is_chains[0]
-
-        dl = chain.get_dloglike_stats()
-        text_note_1 = 'Average delta loglike: {:n}\n'.format(dl[0])
-        text_note_1 += 'RMS delta loglike: {:n}\n'.format(dl[1])
-
-        text_note_1 += '\nEffective sample sizes\n'
-        ESS_base = chain.base.get_ESS_dict()
-        ESS_IS = chain.get_ESS_dict()
-        for key in ESS_base.keys():
-            text_note_1 += '{}: {:.0f}/{:.0f} = {:.0%}\n'.format(key, ESS_IS[key], ESS_base[key], ESS_IS[key]/ESS_base[key])
-
-        text_note_1 += '\nTotal samples: {}\n'.format(chain.N)
-
-        base_mean, base_std = chain.base.get_mean(config['params2plot']), chain.base.get_std(config['params2plot'])
-        is_mean, is_std = chain.get_mean(config['params2plot']), chain.get_std(config['params2plot'])
-
-        text_note_2 = 'Baseline mean ± std\n'
-        for p,m,s in zip(param_to_label(config['params2plot']), base_mean, base_std):
-            text_note_2 += '${}$ {:3n} ± {:3n}\n'.format(p, m, s)
-
-        text_note_2 += '\nImportance sampled mean ± std\n'
-        for p,m,s in zip(param_to_label(config['params2plot']), is_mean, is_std):
-            text_note_2 += '${}$ {:3n} ± {:3n}\n'.format(p, m, s)
-
-        text_note_2 += '\nDelta parameter/std\n'
-        for p, bm, bs, im in zip(param_to_label(config['params2plot']), base_mean, base_std, is_mean):
-            text_note_2 += '${}$ {:3n}\n'.format(p, (im-bm)/bs)
-
     g.export(output + '_triangle.' + fig_format)
+
+    return g
 
 def plot_weights(is_chains, output, fig_format='pdf'):
     for chain in is_chains:
@@ -808,6 +815,23 @@ def main():
         args.base_plot = True
         # args.markdown_stats = True
         args.plot_2d = True
+
+    mpl.rcParams['figure.dpi']= 150
+    plt.rcParams['savefig.dpi'] = 300
+    mpl.rcParams['figure.facecolor']= 'white'
+    mpl.rcParams['text.usetex']= True
+    mpl.rcParams['font.family']= 'serif'
+    mpl.rcParams['font.serif']= 'cm'
+    mpl.rcParams['font.size']= 10
+    mpl.rcParams['pgf.texsystem']= "pdflatex"
+    mpl.rcParams['pgf.rcfonts']= False
+    mpl.rcParams['lines.linewidth'] = 1.75
+
+    figwidth = 440/72.27
+    golden_ratio = 0.5*(1+5**0.5)
+    mpl.rcParams['figure.figsize'] = (figwidth, figwidth/golden_ratio)
+
+    mpl.rcParams['axes.prop_cycle'] = mpl.cycler(color=['#000000', '#3E89DA', '#FEFEFE', '#F87A44'])
         
     base_chain = Chain(args.chain, args.boosted, args.base_weight)
     is_chains = [ImportanceChain(iw_filename, base_chain) for i, iw_filename in enumerate(args.importance_weights)]
