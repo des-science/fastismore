@@ -1,0 +1,4 @@
+#!/usr/bin/env sh
+sed -n '/START_OF_PARAMS_INI/,/END_OF_PARAMS_INI/p' $1 | sed 's/## //g;1d;$d' > params_$(basename $1).ini
+sed -n '/START_OF_VALUES_INI/,/END_OF_VALUES_INI/p' $1 | sed 's/## //g;1d;$d' > values_$(basename $1).ini
+sed -n '/START_OF_PRIORS_INI/,/END_OF_PRIORS_INI/p' $1 | sed 's/## //g;1d;$d' > priors_$(basename $1).ini

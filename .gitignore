@@ -1,2 +1,5 @@
 *_chains
 __pycache__/*
+build/*
+fastismore.egg-info/*
+fastismore/__pycache__/*
