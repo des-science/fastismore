@@ -13,6 +13,8 @@ import getdist.plots
 from . import parameters as fparams
 from . import VERBOSE
 
+__all__ = ['Chain', 'ImportanceChain']
+
 class Chain:
     """Description: Generic chain object"""
 
@@ -269,10 +271,8 @@ class Chain:
                 print('Using column "old_weight" as weight for baseline chain.')
             w = self.data["old_weight"]
             return w / w.sum()
-        else:
-            if VERBOSE:
-                print("No weight criteria satisfied. Not returning weights.")
-            return None
+        
+        raise Exception(f"No weight criteria satisfied. weight_option = {self.weight_option}")
 
     def get_likes(self):
         return self.data["like"]
@@ -369,7 +369,6 @@ class Chain:
             distance_to_nsigma_contour, bounds=[1e-4, 8]
         ).x
 
-
 class ImportanceChain(Chain):
     """Description: object to load the importance weights, plot and compute statistics.
     Should be initialized with reference to the respective baseline chain: ImportanceChain(base_chain)
@@ -440,7 +439,7 @@ class ImportanceChain(Chain):
             params = self.get_params()
         # data = self.base.data
         data = fparams.add_extra(self.base.data)
-        data.update(self.data)
+        # data.update(self.data)
 
         return np.array([data[l] for l in params]).T
 

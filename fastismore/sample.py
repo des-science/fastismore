@@ -24,6 +24,8 @@ except:
 
 twopointlike = __import__('2pt_point_mass')
 
+__all__ = ['importance_sample']
+
 class ImportanceSamplingLikelihood(twopointlike.TwoPointGammatMargLikelihood):
     def __init__(self, options):
         super(ImportanceSamplingLikelihood, self).__init__(options)
@@ -59,7 +61,7 @@ class Block():
             if like_column not in labels:
                 raise Exception("Couldn't find column: {}.".format(like_column))
 
-#             like_i = np.where(labels == like_column)[0]
+            # like_i = np.where(labels == like_column)[0]
             def get_i(labels, name):
                 i = np.where(labels == name)[0]
                 if type(i) == float:
@@ -230,7 +232,7 @@ def pc_to_cosmosis_sample(pc_sample_list, cosmosis_labels):
     #make sure cosmosis has all the column labels we are assuming
     for label in ['prior', 'like', 'post', 'weight']:
         assert label in cosmosis_labels, label
-#     print(pc_sample_list)
+    # print(pc_sample_list)
     pc_sample_list = np.float64(pc_sample_list)
     like = -0.5*pc_sample_list[1]
     prior = pc_sample_list[-1]
@@ -302,7 +304,7 @@ def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2p
     data_vector = np.atleast_1d(like_obj.data_y)
 
     # include_norm is true if covariance is not fixed
-#     include_norm = args.include_norm
+    # include_norm = args.include_norm
     include_norm = include_norm or not like_obj.constant_covariance
     include_norm = include_norm or params.get_bool('include_norm', default=False)
 
@@ -312,7 +314,7 @@ def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2p
         raise Exception('Theory and data vectors are not same length ({} and {}.\n Labels = {}'.format(block.theory_len, len(data_vector), labels))
     # Initialize these variables
     precision_matrix = None
-#     log_det = None
+    # log_det = None
     _, log_det_orig = np.linalg.slogdet(like_obj.cov_orig)
     same_cov_count = 0
 
@@ -385,7 +387,7 @@ def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2p
                     # Check if log_det is set and whether we need to constantly update it
                     if not like_obj.constant_covariance:
                         log_det = log_det_orig + like_obj.logdet_fac
-#                         log_det = like_obj.extract_covariance_log_determinant(block)
+                        # log_det = like_obj.extract_covariance_log_determinant(block)
                     else:
                         log_det = log_det_orig
                         
@@ -406,8 +408,8 @@ def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2p
                 new_likes.append(new_like)
 
                 output.write('%e\t%e\t%e\t%e\n' % (old_like, old_weight, new_like, weight))
-#                if (ii-start_index)%10000==0:
-#                    print('{} evals done...'.format(ii))
+            #    if (ii-start_index)%10000==0:
+            #        print('{} evals done...'.format(ii))
                 if (ii-start_index)>max_samples:
                     print('Reached max samples passed by user ({})'.format(max_samples))
                     output.write('Halted because reached max samples passed by user: {}'.format(max_samples))
@@ -446,7 +448,6 @@ def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2p
             write_output()
             write_output('\tTotal samples' + ' '*27 + '{}'.format(Nsample))
             return {'old_weights':old_weights, 'new_weights':weights, 'old_like':np.array(old_likes), 'new_likes':np.array(new_likes)}
-
 
 def main():
     # First, let's handle input arguments

@@ -15,7 +15,36 @@ from . import chain as fchain
 from . import parameters as fparams
 from . import VERBOSE
 
-def plot_posterior(chain, param1, param2, truth=None):
+__all__ = [
+    'plot_posterior',
+    'plot_1d',
+    'plot_2d',
+    'get_stats',
+    'triangle_plot',
+    'plot_weights',
+    'get_markdown_stats',
+    'setup_config',
+    ]
+
+figwidth = 440/72.27
+plot_ratio = 1.5 #0.5*(1+5**0.5)
+
+def setup_config():
+
+    plt.rcParams['figure.dpi']= 150
+    plt.rcParams['savefig.dpi'] = 300
+    plt.rcParams['figure.facecolor']= 'white'
+    plt.rcParams['text.usetex']= True
+    plt.rcParams['font.family']= 'serif'
+    plt.rcParams['font.serif']= 'cm'
+    plt.rcParams['font.size']= 10
+    plt.rcParams['pgf.texsystem']= "pdflatex"
+    plt.rcParams['pgf.rcfonts']= False
+    plt.rcParams['lines.linewidth'] = 1.75
+    plt.rcParams['figure.figsize'] = (figwidth, figwidth/plot_ratio)
+    plt.rcParams['axes.prop_cycle'] = mpl.cycler(color=['#000000', '#3E89DA', '#FEFEFE', '#F87A44'])
+
+def plot_posterior(chain, param1, param2, truth=None, equal_ratio=False):
     fig, ax = plt.subplots()
 
     density = chain.get_density_grid(param1, param2)
@@ -34,12 +63,32 @@ def plot_posterior(chain, param1, param2, truth=None):
     ax.plot(*chain.get_peak_2d(param1, param2),  ls='', c='white', marker='^', markersize=6,label='Peak', zorder=5)
     ax.plot(*chain.get_mean([param1, param2]),  ls='', c='white', marker='s', markersize=6,label='Peak', zorder=5)
 
-    for sigma in np.linspace(0,1, 15)[1:]:
+    for sigma in np.arange(0,2.1,0.1)[1:]:
         for cv in chain.get_contour_vertices(sigma, param1, param2):
             ax.plot(*cv.T, marker='',lw=0.8, c=f'{sigma*0.5}', label=f'${sigma:.1f} \sigma$')
 
-    ax.set_xlabel(param_to_latex(param1))
-    ax.set_ylabel(param_to_latex(param2))
+    range_points = chain.get_contour_vertices(2.2, param1, param2)[-1]
+    range_points = np.array([np.min(range_points, axis=0), np.max(range_points, axis=0)]).T
+    range_diffs = np.diff(range_points)
+
+    if equal_ratio:
+        mid = np.sum(range_points, axis=1)/2
+        if range_diffs[1] < range_diffs[0]:
+            ax.set_xlim(mid[0]-range_diffs[1]/2*plot_ratio, mid[0]+range_diffs[1]/2*plot_ratio)
+            ax.set_ylim(mid[1]-range_diffs[1]/2, mid[1]+range_diffs[1]/2)
+        else:
+            ax.set_xlim(mid[0]-range_diffs[0]/2, mid[0]+range_diffs[0]/2)
+            ax.set_ylim(mid[1]-range_diffs[0]/2/plot_ratio, mid[1]+range_diffs[0]/2/plot_ratio)
+        ax.set_aspect(1)
+
+    else:
+        ax.set_xlim(*range_points[0])
+        ax.set_ylim(*range_points[1])
+        ax.set_aspect(range_diffs[0]/range_diffs[1]/plot_ratio)
+
+
+    ax.set_xlabel(fparams.param_to_latex(param1))
+    ax.set_ylabel(fparams.param_to_latex(param2))
     # ax.legend(loc=(1,0))
     return fig
 
@@ -62,14 +111,15 @@ def plot_2d(param1, param2, chains, truth, labels, sigma=0.3):
         for cv in chain.get_contour_vertices(sigma, param1, param2):
             ax.plot(*cv.T, ls=ls, marker='',lw=lw, c=c, label=f'${sigma:.1f} \sigma$ ' + l)
     
-    ax.set_xlabel(param_to_latex(param1))
-    ax.set_ylabel(param_to_latex(param2))
+    ax.set_xlabel(fparams.param_to_latex(param1))
+    ax.set_ylabel(fparams.param_to_latex(param2))
     ax.legend(loc=(1,0))
     return fig
 
 def plot_1d(param, chains, labels, truth=None, sigma=0.3):
 
     fig, axes = plt.subplots()
+    fig.set_size_inches(figwidth/3, figwidth/3)
 
     l, m, r = chains[0].get_bounds(param, sigma)
     plt.fill_betweenx([-0.7,0.3+len(chains)], l, r, color='#eee')
@@ -86,7 +136,7 @@ def plot_1d(param, chains, labels, truth=None, sigma=0.3):
     plt.gca().set_yticks(np.arange(len(chains)))
     plt.gca().set_yticklabels(labels)
     plt.ylim(-0.3 + len(chains),-0.7)
-    plt.xlabel(param_to_latex(param))
+    plt.xlabel(fparams.param_to_latex(param))
     
     
     return fig
@@ -184,7 +234,7 @@ def plot_weights(is_chains, output, fig_format='pdf'):
 def get_markdown_stats(is_chains, labels, params2plot):
     pairs = list(itt.combinations(params2plot, 2))
     output_string = '\pagenumbering{gobble}\n\n'
-    output_string += '| | ' + '| '.join(['$\Delta {}/\sigma$'.format(param_to_label(p)) for p in params2plot]) + ' | ' + ('| '.join(['2D bias ${} \\times {}$'.format(*param_to_label(p)) for p in pairs]) if len(pairs) > 1 else '2D bias') + ' |\n'
+    output_string += '| | ' + '| '.join(['$\Delta {}/\sigma$'.format(fparams.param_to_label(p)) for p in params2plot]) + ' | ' + ('| '.join(['2D bias ${} \\times {}$'.format(*fparams.param_to_label(p)) for p in pairs]) if len(pairs) > 1 else '2D bias') + ' |\n'
     output_string += '| -: |' + ' :-: |'*(len(params2plot)+1 + len(pairs)) + '\n'
     for chain, label in zip(is_chains, labels):
         ESS_base = chain.base.get_ESS_dict()
@@ -206,7 +256,7 @@ def get_markdown_stats(is_chains, labels, params2plot):
 #     chains.extend(is_chains)
 #     c = ChainConsumer()
 #     for i, chain in zip(range(len(chains)), chains):
-#         c.add_chain(chain.on_params(params2plot), parameters=param_to_latex(params2plot).tolist(), weights=chain.get_weights(), name='chain{}'.format(i))
+#         c.add_chain(chain.on_params(params2plot), parameters=fparams.param_to_latex(params2plot).tolist(), weights=chain.get_weights(), name='chain{}'.format(i))
 #     c.plotter.plot_summary(errorbar=True, truth='chain0', include_truth_chain=True, filename='{}_summary.{}'.format(output, fig_format))
 
 def main():
@@ -287,22 +337,7 @@ def main():
         # args.markdown_stats = True
         args.plot_shifts = True
 
-    plt.rcParams['figure.dpi']= 150
-    plt.rcParams['savefig.dpi'] = 300
-    plt.rcParams['figure.facecolor']= 'white'
-    plt.rcParams['text.usetex']= True
-    plt.rcParams['font.family']= 'serif'
-    plt.rcParams['font.serif']= 'cm'
-    plt.rcParams['font.size']= 10
-    plt.rcParams['pgf.texsystem']= "pdflatex"
-    plt.rcParams['pgf.rcfonts']= False
-    plt.rcParams['lines.linewidth'] = 1.75
-
-    figwidth = 440/72.27
-    golden_ratio = 0.5*(1+5**0.5)
-    plt.rcParams['figure.figsize'] = (figwidth, figwidth/golden_ratio)
-
-    plt.rcParams['axes.prop_cycle'] = mpl.cycler(color=['#000000', '#3E89DA', '#FEFEFE', '#F87A44'])
+    setup_config()
         
     base_chain = fchain.Chain(args.chain, args.boosted, args.base_weight)
     is_chains = [fchain.ImportanceChain(iw_filename, base_chain) for i, iw_filename in enumerate(args.importance_weights)]
