@@ -20,7 +20,8 @@ __all__ = [
     'plot_1d',
     'plot_2d',
     'get_stats',
-    'triangle_plot',
+    'plot_triangle_getdist',
+    'plot_triangle',
     'plot_weights',
     'get_markdown_stats',
     'setup_config',
@@ -231,7 +232,7 @@ def get_stats(chain, is_chains, params2plot):
         
     return output_string
 
-def triangle_plot(base_chain, is_chains, extra_chains, params2plot, labels, output, fig_format='pdf', base_plot=False, classic_kde=False):
+def plot_triangle_getdist(base_chain, is_chains, extra_chains, params2plot, labels, output, fig_format='pdf', base_plot=False, classic_kde=False):
     samples = []
     settings = {'smooth_scale_1D': 0.3, 'smooth_scale_2D': 0.4} if classic_kde else None
     if base_plot:
@@ -383,7 +384,7 @@ def main():
 
     # Make triangle plot
     if args.triangle_plot:
-        triangle_plot(
+        plot_triangle_getdist(
             base_chain,
             is_chains,
             extra_chains,
