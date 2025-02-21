@@ -94,7 +94,37 @@ def plot_posterior(chain, param1, param2, truth=None, equal_ratio=False):
 
 def plot_2d(param1, param2, chains, truth, labels, sigma=0.3):
     fig, ax = plt.subplots()
+    _subplot_2d(ax, param1, param2, chains, truth, labels, sigma)
+    ax.legend(loc=(1.05,0))
+    ax.set_xlabel(fparams.param_to_latex(param1))
+    ax.set_ylabel(fparams.param_to_latex(param2))
+    return fig
 
+def plot_triangle(params, chains, truth, labels, sigma):
+
+    fig = plt.figure(figsize=(20,20))
+
+    axes = fig.add_gridspec(len(params), len(params), hspace=0, wspace=0).subplots(sharex='col', sharey='row')
+        
+    i, j = np.mgrid[0:len(params),0:len(params)]
+        
+    for ax,a,b in zip(axes[i > j], j[i > j], i[i > j]):
+        _subplot_2d(ax, params[a], params[b], chains, truth, labels, sigma)
+        ax.set_xlabel(fparams.param_to_latex(params[a]))
+        ax.set_ylabel(fparams.param_to_latex(params[b]))
+
+    for ax in axes[i <= j]:
+        ax.remove()
+        
+    for ax in axes.flatten():
+        ax.label_outer()
+        
+    legend_handles, legend_labels, _, _ = mpl.legend._parse_legend_args([axes[1,0]])
+    axes[1,0].legend(legend_handles, legend_labels, loc=(1.05,0.2), ncol=2, frameon=False)
+
+    return fig, axes
+
+def _subplot_2d(ax, param1, param2, chains, truth, labels, sigma=0.3):
     linestyles = ['-', ':', '--', '-.', (0, (3, 1, 1, 1, 1, 1))]
     markers = ['o', '<', '>', 'v', '^']
     colors = ['#000000', '#3E89DA', '#F87A44', '#427B48', '#927FC3']
@@ -111,10 +141,7 @@ def plot_2d(param1, param2, chains, truth, labels, sigma=0.3):
         for cv in chain.get_contour_vertices(sigma, param1, param2):
             ax.plot(*cv.T, ls=ls, marker='',lw=lw, c=c, label=f'${sigma:.1f} \sigma$ ' + l)
     
-    ax.set_xlabel(fparams.param_to_latex(param1))
-    ax.set_ylabel(fparams.param_to_latex(param2))
-    ax.legend(loc=(1,0))
-    return fig
+    return ax
 
 def plot_1d(param, chains, labels, truth=None, sigma=0.3):
 
