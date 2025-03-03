@@ -20,6 +20,7 @@ setup(
         'bin/fastis-extract-ini',
         'bin/fastis-prune-chain',
         'bin/fastis-polychord2cosmosis',
+        'bin/fastis-pickle2cosmosis',
         ],
     entry_points = {
         'console_scripts': [

@@ -18,7 +18,23 @@ __all__ = ['Chain', 'ImportanceChain']
 class Chain:
     """Description: Generic chain object"""
 
-    def __init__(self, filename, boosted=False, weight_option="weight"):
+    def __init__(self, data=None, weight_option="weight", getdist_settings=None):
+        if data is not None:
+            self.data = data
+        self.weight_option = weight_option
+        self.getdist_settings = getdist_settings
+
+    @property
+    def data(self):
+        return self._data
+    
+    @data.setter
+    def data(self, data):
+        self._data = data
+        self.N = len(list(data.values())[0])
+
+    @classmethod
+    def from_file(cls, filename, boosted=False, weight_option="weight", getdist_settings=None):
         """Initialize chain with given filename (full path). Set boosted=True
         if you want to load a boosted chain. If boosted_chain_fn is passed,
         use that, otherwise use default format/path for Y3 (i.e. a
@@ -34,17 +50,22 @@ class Chain:
 
             old_weight: use 'old_weight' as weight for chain
         """
+        self = cls(weight_option=weight_option, getdist_settings=getdist_settings)
         self.filename = filename
         self.weight_option = weight_option
         self.name = ".".join(filename.split("/")[-1].split(".")[:-1])
         self.chaindir = "/".join(filename.split("/")[:-1])
         # go to pcfiles subdir and drop 'chain' from beginning of name
         self.filename_boosted = self.chaindir + "/pcfiles/pc" + self.name[5:] + "_.txt"
+        
         if boosted:
             self.load_boosted_data()
         else:
             self.load_data()
+
         fparams.add_extra(self.data)
+
+        return self
 
     def load_data(self, boosted=False, nsample=0):
         data = []
@@ -170,23 +191,29 @@ class Chain:
 
         return fparams.add_extra(fiducial, extra)
 
-    def load_ini(self, ini="params"):
+    def load_ini(self, ini="params", filename=None):
         """loads given ini info from chain file. If ini=None, loads directly from file.ini"""
         values = configparser.ConfigParser(strict=False)
 
+        if filename is None:
+            try:
+                filename = self.filename
+            except:
+                raise Exception("Can't determine ini file.")
+
         ini = ini.upper()
-        with open(self.filename) as f:
+        with open(filename) as f:
             line = f.readline()
             lines = []
 
             if VERBOSE:
-                print("Looking for START_OF_{} in file {}".format(ini, self.filename))
+                print("Looking for START_OF_{} in file {}".format(ini, filename))
 
             while "START_OF_{}".format(ini) not in line:
                 line = f.readline()
                 if line == "":
                     raise Exception(
-                        "START_OF_{} not found in file {}.".format(ini, self.filename)
+                        "START_OF_{} not found in file {}.".format(ini, filename)
                     )
 
             while "END_OF_{}".format(ini) not in line:
@@ -194,12 +221,16 @@ class Chain:
                 lines.append(line.replace("#", ""))
                 if line == "":
                     raise Exception(
-                        "END_OF_{} not found in file {}.".format(ini, self.filename)
+                        "END_OF_{} not found in file {}.".format(ini, filename)
                     )
 
         values.read_string("\r".join(lines[:-1]))
 
         return values
+
+    def load_params_from_chain(self, filename):
+        self._params = self.load_ini(ini="params", filename=filename)
+        self._values = self.load_ini(ini="values", filename=filename)
 
     def params(self):
         if not hasattr(self, "_params"):
@@ -231,7 +262,7 @@ class Chain:
         return self.ranges
 
     @functools.cache
-    def get_MCSamples(self, settings=None, params=None):
+    def get_MCSamples(self, params=None):
 
         if params == None:
             params = self.get_params()
@@ -246,7 +277,7 @@ class Chain:
             ),
             names=params,
             labels=[l for l in self.get_labels(params=params)],
-            settings=settings,
+            settings=self.getdist_settings,
         )
 
     def get_weights(self):
@@ -337,6 +368,28 @@ class Chain:
             }
         return self.ESS_dict
 
+    def get_1d_kde(self, param):
+        kde = sp.stats.gaussian_kde(self.on_params([param])[:,0], weights=self.get_weights())
+        return kde
+
+    def get_sigma_1d(self, param, a, b):
+        left, right, signal = a, b, 1
+        if left > right:
+            left, right = right, left
+            signal = -1
+        try:
+            vals = self.data[param]
+        except KeyError:
+            vals = self.base.data[param]
+            
+        mask = (vals > left) * (vals < right)
+
+        pval = np.sum(self.get_weights()[mask]) / np.sum(
+            self.get_weights()
+        )
+
+        return signal * np.sqrt(2) * sp.special.erfinv(2 * pval)
+
     @functools.cache
     def get_density_grid(self, param1, param2):
         return gd.plots.MCSampleAnalysis([]).get_density_grid(
@@ -374,11 +427,19 @@ class ImportanceChain(Chain):
     Should be initialized with reference to the respective baseline chain: ImportanceChain(base_chain)
     """
 
-    def __init__(self, filename, base_chain):
+    def __init__(self, base_chain, data=None, getdist_settings=None):
+        self.base = base_chain
+        if data is not None:
+            self.data = data
+        self.getdist_settings = getdist_settings
+
+    @classmethod
+    def from_file(cls, filename, base_chain, getdist_settings=None):
+        self = cls(base_chain, getdist_settings=getdist_settings)
         self.filename = filename
         self.name = ".".join(filename.split("/")[-1].split(".")[:-1])
-        self.base = base_chain
         self.load_data()
+        return self
 
     def get_dloglike_stats(self):
         """compute weighted average and rms of loglikelihood difference from baseline to IS chain.
@@ -488,23 +549,8 @@ class ImportanceChain(Chain):
         return self.base.get_fiducial(*args, **kwargs)
 
     def get_1d_shift(self, param):
-
-        left, right, signal = self.base.get_mean(param), self.get_mean(param), 1
-        if left > right:
-            left, right = right, left
-            signal = -1
-
-        vals = self.base.data[param]
-        mask = (vals > left) * (vals < right)
-
-        pval_base = np.sum(self.base.get_weights()[mask]) / np.sum(
-            self.base.get_weights()
-        )
-        pval_is = np.sum(self.get_weights()[mask]) / np.sum(self.get_weights())
-
-        return signal * np.sqrt(2) * sp.special.erfinv(2 * pval_base), signal * np.sqrt(
-            2
-        ) * sp.special.erfinv(2 * pval_is)
+        a, b = self.base.get_mean(param), self.get_mean(param)
+        return self.base.get_sigma_1d(param, a, b), self.get_sigma_1d(param, a, b)
 
     def get_2d_shift_peak(self, param1, param2, base_posterior=True):
         posterior, peak = self, self.base
@@ -532,10 +578,12 @@ class ImportanceChain(Chain):
         posterior = self.base if base_posterior else self
         contaminated = self.get_mean([param1, param2])
         baseline = self.base.get_mean([param1, param2])
-        return np.abs(
-            posterior.find_sigma_of_point(contaminated, param1, param2)
-            - posterior.find_sigma_of_point(baseline, param1, param2)
-        )
+
+        sigma_base = posterior.find_sigma_of_point(baseline, param1, param2)
+        sigma_cont = posterior.find_sigma_of_point(contaminated, param1, param2)
+
+        return np.sqrt(2) * sp.special.erfinv(sp.special.erf(sigma_cont/np.sqrt(2)) - sp.special.erf(sigma_base/np.sqrt(2)))
+
 
     def get_2d_shift(self, param1, param2, mode="max", gaussian=False, base_posterior=True):
         if mode not in ["mean", "max"]:
@@ -570,3 +618,42 @@ class ImportanceChain(Chain):
     def load_data(self, *args, **kwargs):
         nsample = self.base.nsample if hasattr(self.base, "nsample") else 0
         super().load_data(*args, **kwargs, nsample=nsample)
+
+    def get_param_differences(self, baseline=None, params=None, min_weight=1e-3):
+
+        if params is None:
+            params = self.get_params()
+        
+        if baseline is None:
+            baseline = self.base
+
+        values = self.on_params(params)[np.newaxis,:,:] - baseline.on_params(params)[:,np.newaxis,:]
+        values = values.reshape(-1, values.shape[-1])
+
+        weights = self.get_weights() * baseline.get_weights()[:, np.newaxis]
+        weights = weights.ravel()
+
+        # Removing low-weight samples
+        if min_weight > 0:
+            max_weight = np.max(weights)
+            mask = weights > min_weight*max_weight
+            values = values[mask]
+            weights = weights[mask]
+
+        # Var(x - y) = Var(x) + Var(y) ~ 2*Var(x)
+        # Here we remove that factor of 2
+        average = np.average(values, weights=weights, axis=0) 
+        values -= average # center distribution
+        values /= np.sqrt(2) # shring it
+        values += average # shift it back to original position
+        
+        data = {p:c for p,c in zip(params, values.T)}
+        data['weight'] = weights
+        
+        differences = Chain(data=data)
+            
+        differences.filename = self.base.filename
+
+        differences.truth = {p:0 for p in params}
+
+        return differences

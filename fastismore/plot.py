@@ -30,6 +30,10 @@ __all__ = [
 figwidth = 440/72.27
 plot_ratio = 1.5 #0.5*(1+5**0.5)
 
+default_colors = ['#000000', '#3E89DA', '#F87A44', '#427B48', '#927FC3']
+default_linestyles = ['-', ':', '--', '-.', (0, (3, 1, 1, 1, 1, 1))]
+default_markers = ['o', '<', '>', 'v', '^']
+
 def setup_config():
 
     plt.rcParams['figure.dpi']= 150
@@ -45,7 +49,7 @@ def setup_config():
     plt.rcParams['figure.figsize'] = (figwidth, figwidth/plot_ratio)
     plt.rcParams['axes.prop_cycle'] = mpl.cycler(color=['#000000', '#3E89DA', '#FEFEFE', '#F87A44'])
 
-def plot_posterior(chain, param1, param2, truth=None, equal_ratio=False):
+def plot_posterior(chain, param1, param2, truth=None, equal_ratio=False, extent=None):
     fig, ax = plt.subplots()
 
     density = chain.get_density_grid(param1, param2)
@@ -62,14 +66,17 @@ def plot_posterior(chain, param1, param2, truth=None, equal_ratio=False):
         ax.axhline(truth[param2], ls='--',alpha=0.3,color='k')
 
     ax.plot(*chain.get_peak_2d(param1, param2),  ls='', c='white', marker='^', markersize=6,label='Peak', zorder=5)
-    ax.plot(*chain.get_mean([param1, param2]),  ls='', c='white', marker='s', markersize=6,label='Peak', zorder=5)
+    ax.plot(*chain.get_mean([param1, param2]),  ls='', c='white', marker='s', markersize=6,label='Mean', zorder=5)
 
     for sigma in np.arange(0,2.1,0.1)[1:]:
         for cv in chain.get_contour_vertices(sigma, param1, param2):
             ax.plot(*cv.T, marker='',lw=0.8, c=f'{sigma*0.5}', label=f'${sigma:.1f} \sigma$')
 
-    range_points = chain.get_contour_vertices(2.2, param1, param2)[-1]
-    range_points = np.array([np.min(range_points, axis=0), np.max(range_points, axis=0)]).T
+    if extent is None:
+        range_points = chain.get_contour_vertices(2.2, param1, param2)[-1]
+        range_points = np.array([np.min(range_points, axis=0), np.max(range_points, axis=0)]).T
+    else:
+        range_points = extent
     range_diffs = np.diff(range_points)
 
     if equal_ratio:
@@ -90,27 +97,32 @@ def plot_posterior(chain, param1, param2, truth=None, equal_ratio=False):
 
     ax.set_xlabel(fparams.param_to_latex(param1))
     ax.set_ylabel(fparams.param_to_latex(param2))
+
+    legend_handles, legend_labels, _, _ = mpl.legend._parse_legend_args([ax])
+    ax.legend(legend_handles[:2], legend_labels[:2], frameon=False, labelcolor='linecolor')
+
     # ax.legend(loc=(1,0))
     return fig
 
-def plot_2d(param1, param2, chains, truth, labels, sigma=0.3):
-    fig, ax = plt.subplots()
+def plot_2d(param1, param2, chains, truth, labels=None, sigma=0.3, figsize=None):
+    fig, ax = plt.subplots(figsize=figsize)
     _subplot_2d(ax, param1, param2, chains, truth, labels, sigma)
-    ax.legend(loc=(1.05,0))
+    if labels is not None:
+        ax.legend(loc=(1.05,0))
     ax.set_xlabel(fparams.param_to_latex(param1))
     ax.set_ylabel(fparams.param_to_latex(param2))
     return fig
 
-def plot_triangle(params, chains, truth, labels, sigma):
+def plot_triangle(params, chains, truth, labels, sigma, show_peaks=True, param_labels=None, figsize=(20,20)):
 
-    fig = plt.figure(figsize=(20,20))
+    fig = plt.figure(figsize=figsize)
 
     axes = fig.add_gridspec(len(params), len(params), hspace=0, wspace=0).subplots(sharex='col', sharey='row')
         
     i, j = np.mgrid[0:len(params),0:len(params)]
         
     for ax,a,b in zip(axes[i > j], j[i > j], i[i > j]):
-        _subplot_2d(ax, params[a], params[b], chains, truth, labels, sigma)
+        _subplot_2d(ax=ax, param1=params[a], param2=params[b], chains=chains, truth=truth, labels=labels, sigma=sigma, show_peaks=show_peaks)
         ax.set_xlabel(fparams.param_to_latex(params[a]))
         ax.set_ylabel(fparams.param_to_latex(params[b]))
 
@@ -121,41 +133,47 @@ def plot_triangle(params, chains, truth, labels, sigma):
         ax.label_outer()
         
     legend_handles, legend_labels, _, _ = mpl.legend._parse_legend_args([axes[1,0]])
-    axes[1,0].legend(legend_handles, legend_labels, loc=(1.05,0.2), ncol=2, frameon=False)
+    axes[1,0].legend(legend_handles, legend_labels, loc=(1.05,0.2), ncol=2 if show_peaks else 1, frameon=False)
 
     return fig, axes
 
-def _subplot_2d(ax, param1, param2, chains, truth, labels, sigma=0.3):
-    linestyles = ['-', ':', '--', '-.', (0, (3, 1, 1, 1, 1, 1))]
-    markers = ['o', '<', '>', 'v', '^']
-    colors = ['#000000', '#3E89DA', '#F87A44', '#427B48', '#927FC3']
+def _subplot_2d(ax, param1, param2, chains, truth, labels=None, sigma=0.3, show_peaks=True):
+    istart = len(default_colors) - len(chains)
+    linestyles = default_linestyles[istart:]
+    markers = default_markers[istart:]
+    colors = default_colors[istart:]
     markersize=6
     lw=1.8
     
     ax.axvline(truth[param1], ls='--',alpha=0.3,color='k')
     ax.axhline(truth[param2], ls='--',alpha=0.3,color='k')
+
+    if labels is None:
+        labels = len(chains)*[None]
     
-    for chain,ls,m,c,l in zip(chains, linestyles, markers, colors, labels):
-        ax.plot(*chain.get_peak_2d(param1, param2),  ls='', marker=m, markersize=markersize, c=c,label='Peak ' + l, zorder=5)
+    if show_peaks:
+        for chain,ls,m,c,l in zip(chains, linestyles, markers, colors, labels):
+            ax.plot(*chain.get_peak_2d(param1, param2),  ls='', marker=m, markersize=markersize, c=c,label=('Peak ' + l) if l is not None else l, zorder=5)
     
     for chain,ls,m,c,l in zip(chains, linestyles, markers, colors, labels):
         for cv in chain.get_contour_vertices(sigma, param1, param2):
-            ax.plot(*cv.T, ls=ls, marker='',lw=lw, c=c, label=f'${sigma:.1f} \sigma$ ' + l)
+            ax.plot(*cv.T, ls=ls, marker='',lw=lw, c=c, label=(f'${sigma:.1f} \sigma$ ' + l) if l is not None else l)
     
     return ax
 
-def plot_1d(param, chains, labels, truth=None, sigma=0.3):
+def plot_1d(param, chains, labels, truth=None, sigma=0.3, baseline=True):
 
     fig, axes = plt.subplots()
     fig.set_size_inches(figwidth/3, figwidth/3)
 
-    l, m, r = chains[0].get_bounds(param, sigma)
-    plt.fill_betweenx([-0.7,0.3+len(chains)], l, r, color='#eee')
+    if baseline:
+        l, m, r = chains[0].get_bounds(param, sigma)
+        plt.fill_betweenx([-0.7,0.3+len(chains)], l, r, color='#eee')
     
     if truth is not None:
         plt.axvline(truth[param], c='#aaa', ls='dashed')
 
-    colors = ['#000000', '#3E89DA', '#F87A44', '#427B48', '#927FC3']
+    colors = default_colors if baseline else default_colors[1:]
 
     for i,(c, (l,m,r)) in enumerate(zip(colors, [chain.get_bounds(param, sigma) for chain in chains])):
         plt.plot([l,r], [i,i], c=c)
@@ -166,8 +184,22 @@ def plot_1d(param, chains, labels, truth=None, sigma=0.3):
     plt.ylim(-0.3 + len(chains),-0.7)
     plt.xlabel(fparams.param_to_latex(param))
     
-    
     return fig
+
+def plot_1d_post(param, chains, labels=None, truth=None, sigma=3, figsize=(2,2)):
+    fig, ax = plt.subplots(figsize=(2,2))
+    
+    std = chains[0].get_std([param])[0]
+    mean = chains[0].get_mean([param])[0]
+
+    x = np.linspace(mean - sigma*std, mean + sigma*std, 50)
+
+    for chain, c, ls in zip(chains, default_colors, default_linestyles):
+        ax.plot(x, chain.get_1d_kde(param)(x), c=c, ls=ls)
+
+    ax.axvline(truth[param], ls='dashed', alpha=0.3)
+    ax.set_xlabel(fparams.param_to_latex(param))
+    return fig, ax
 
 def get_stats(chain, is_chains, params2plot):
     output_string = ''

@@ -26,7 +26,7 @@ label_dict = {
     'cosmological_parameters--w0_fld':  r'w_{GDM}',
     'cosmological_parameters--cs2_fld': r'c_s^2',
     'cosmological_parameters--log_cs2': r'log(c_s^2)',
-    'cosmological_parameters--omega_m': r'\Omega_m',
+    'cosmological_parameters--omega_m': r'\Omega_{\rm m}',
     'cosmological_parameters--omega_c': r'\Omega_c',
     'cosmological_parameters--ommh2': r'\Omega_m h^2',
     'cosmological_parameters--ombh2': r'\Omega_b h^2',
@@ -94,21 +94,25 @@ label_dict = {
 def add_extra(data, extra=None, weights=None):
     if extra is not None:
         data.update(extra)
+    if 'cosmological_parameters--sigma_8' in data.keys():
+        data['cosmological_parameters--s8'] = \
+            data['cosmological_parameters--sigma_8']*(data['cosmological_parameters--omega_m']/0.3)**0.5
 
-    data['cosmological_parameters--s8'] = \
-        data['cosmological_parameters--sigma_8']*(data['cosmological_parameters--omega_m']/0.3)**0.5
+    if 'cosmological_parameters--h0' in data.keys():
+        data['cosmological_parameters--ommh2'] = \
+            data['cosmological_parameters--omega_m']*data['cosmological_parameters--h0']**2
 
-    data['cosmological_parameters--ommh2'] = \
-        data['cosmological_parameters--omega_m']*data['cosmological_parameters--h0']**2
+    if 'cosmological_parameters--omega_b' in data.keys():
+        data['cosmological_parameters--ombh2'] = \
+            data['cosmological_parameters--omega_b']*data['cosmological_parameters--h0']**2
 
-    data['cosmological_parameters--ombh2'] = \
-        data['cosmological_parameters--omega_b']*data['cosmological_parameters--h0']**2
+    if 'cosmological_parameters--ommh2' in data.keys():
+        data['cosmological_parameters--omch2'] = \
+            data['cosmological_parameters--ommh2'] - data['cosmological_parameters--ombh2']
 
-    data['cosmological_parameters--omch2'] = \
-        data['cosmological_parameters--ommh2'] - data['cosmological_parameters--ombh2']
-
-    data['cosmological_parameters--omega_c'] = \
-        data['cosmological_parameters--omega_m'] - data['cosmological_parameters--omega_b']
+    if 'cosmological_parameters--omega_b' in data.keys():
+        data['cosmological_parameters--omega_c'] = \
+            data['cosmological_parameters--omega_m'] - data['cosmological_parameters--omega_b']
     
     if 'cosmological_parameters--w' in data.keys() and 'cosmological_parameters--wa' in data.keys() and weights is not None:
         w0, wa = data['cosmological_parameters--w'], data['cosmological_parameters--wa']
