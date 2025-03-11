@@ -113,40 +113,82 @@ def plot_2d(param1, param2, chains, truth, labels=None, sigma=0.3, figsize=None)
     ax.set_ylabel(fparams.param_to_latex(param2))
     return fig
 
-def plot_triangle(params, chains, truth, labels, sigma, show_peaks=True, param_labels=None, figsize=(20,20)):
+def plot_triangle(params, chains, truth, labels, sigma, show_peaks=True, param_labels=None, figsize=(20,20), show_1d=True, show_bands=True):
+
+    list_chains = chains if isinstance(chains, (list, tuple)) else [chains]
 
     fig = plt.figure(figsize=figsize)
 
     axes = fig.add_gridspec(len(params), len(params), hspace=0, wspace=0).subplots(sharex='col', sharey='row')
         
     i, j = np.mgrid[0:len(params),0:len(params)]
-        
+
+    print('Plotting 2D')
     for ax,a,b in zip(axes[i > j], j[i > j], i[i > j]):
-        _subplot_2d(ax=ax, param1=params[a], param2=params[b], chains=chains, truth=truth, labels=labels, sigma=sigma, show_peaks=show_peaks)
+        _subplot_2d(ax=ax, param1=params[a], param2=params[b], chains=list_chains, truth=truth, labels=labels, sigma=sigma, show_peaks=show_peaks)
+        ax.tick_params(direction='inout')
         ax.set_xlabel(fparams.param_to_latex(params[a]))
         ax.set_ylabel(fparams.param_to_latex(params[b]))
 
-    for ax in axes[i <= j]:
+    if show_1d:
+        if show_bands:
+            print('Plotting bands')
+            for ax,a,b in zip(axes[i > j], j[i > j], i[i > j]):
+                left_a, right_a = list_chains[0].get_bounds(params[a], sigma=sigma, maxlike=False)
+                left_b, right_b = list_chains[0].get_bounds(params[b], sigma=sigma, maxlike=False)
+
+                ax.axvspan(left_a, right_a, facecolor="none", edgecolor='#000',alpha=0.1, hatch='/////')
+                ax.axhspan(left_b, right_b, facecolor="none", edgecolor='#000',alpha=0.1, hatch='\\\\\\\\\\')
+                
+                # ax.fill_between([left_a, right_a], [left_b, left_b], [right_b, right_b], alpha = 0.2)
+
+        plt.tight_layout() # Force plot range calcs
+        
+        for m,_ in enumerate(params[:-1]):
+            axes[m,m].set_xlim(*axes[-1,m].get_xlim())
+        # Set range of the rightmost 1D plot to its corresponding row y-range
+        axes[-1,-1].set_xlim(*axes[-1,0].get_ylim())
+
+        print('Plotting 1D')
+        for ax,a in zip(np.diag(axes), np.diag(i)):
+            ax.get_shared_y_axes().remove(ax)
+            ax.yaxis.major = mpl.axis.Ticker()
+            ax.yaxis.set_major_locator(mpl.ticker.AutoLocator())
+            ax.yaxis.set_major_formatter(mpl.ticker.ScalarFormatter())
+            ax.get_shared_x_axes().remove(ax)
+            _subplot_1d(ax=ax, param=params[a], chains=list_chains, truth=truth, labels=labels, sigma=sigma, show_bands=show_bands)
+            ax.set_xlabel(fparams.param_to_latex(params[a]))
+            ax.set_yticks([])
+            ax.margins(x=0)
+            ax.set_ylim(0, ax.get_ylim()[1])
+
+    for ax in axes[(i < j) if show_1d else (i <= j)]:
         ax.remove()
         
     for ax in axes.flatten():
         ax.label_outer()
         
     legend_handles, legend_labels, _, _ = mpl.legend._parse_legend_args([axes[1,0]])
-    axes[1,0].legend(legend_handles, legend_labels, loc=(1.05,0.2), ncol=2 if show_peaks else 1, frameon=False)
+    
+    (axes[0,0] if show_1d else axes[1,1]).legend(legend_handles,
+        legend_labels,
+        loc=(1.05,0.2),
+        ncol=(2 if (show_peaks and len(list_chains) > 1) else 1),
+        frameon=False
+    )
 
     return fig, axes
 
 def _subplot_2d(ax, param1, param2, chains, truth, labels=None, sigma=0.3, show_peaks=True):
-    istart = len(default_colors) - len(chains)
+    istart = 1 if len(default_colors) - len(chains) == 1 else 0
     linestyles = default_linestyles[istart:]
     markers = default_markers[istart:]
     colors = default_colors[istart:]
     markersize=6
     lw=1.8
     
-    ax.axvline(truth[param1], ls='--',alpha=0.3,color='k')
-    ax.axhline(truth[param2], ls='--',alpha=0.3,color='k')
+    ax.axvline(truth[param1], ls='--',alpha=0.5,color='k')
+    ax.axhline(truth[param2], ls='--',alpha=0.5,color='k')
 
     if labels is None:
         labels = len(chains)*[None]
@@ -161,13 +203,50 @@ def _subplot_2d(ax, param1, param2, chains, truth, labels=None, sigma=0.3, show_
     
     return ax
 
+def _subplot_1d(ax, param, chains, truth, labels=None, sigma=0.3, show_bands=True):
+    istart = 1 if len(default_colors) - len(chains) == 1 else 0
+    linestyles = default_linestyles[istart:]
+    markers = default_markers[istart:]
+    colors = default_colors[istart:]
+    markersize=6
+    lw=1.8
+    
+    ax.axvline(truth[param], ls='--', alpha=0.5, color='k')
+
+    if labels is None:
+        labels = len(chains)*[None]
+    
+    for chain,ls,c,l in zip(chains, linestyles, colors, labels):
+
+        mean = chain.get_mean([param])[0]
+        std = chain.get_std([param])[0]
+
+        x1, x2 = ax.get_xlim()
+
+        x = np.linspace(x1,x2, 50)
+        y = chain.get_density_1d(param).Prob(x)
+
+        ax.plot(x, y, c=c, ls=ls, label=l)
+
+        ax.set_xlabel(fparams.param_to_latex(param))
+
+    if show_bands:
+        left, right = chains[0].get_bounds(param, sigma=sigma, maxlike=False)
+        x = np.linspace(left, right, 50)
+        y = chains[0].get_density_1d(param).Prob(x)
+
+        ax.fill_between(x, y, facecolor="none", edgecolor='#000',alpha=0.1, hatch='/////')
+        # ax.axvspan(left_a, right_a, facecolor="none", edgecolor='#000',alpha=0.1, hatch='/////')
+
+    return ax
+
 def plot_1d(param, chains, labels, truth=None, sigma=0.3, baseline=True):
 
     fig, axes = plt.subplots()
     fig.set_size_inches(figwidth/3, figwidth/3)
 
     if baseline:
-        l, m, r = chains[0].get_bounds(param, sigma)
+        l, r = chains[0].get_bounds(param, sigma, maxlike=False)
         plt.fill_betweenx([-0.7,0.3+len(chains)], l, r, color='#eee')
     
     if truth is not None:
@@ -175,7 +254,7 @@ def plot_1d(param, chains, labels, truth=None, sigma=0.3, baseline=True):
 
     colors = default_colors if baseline else default_colors[1:]
 
-    for i,(c, (l,m,r)) in enumerate(zip(colors, [chain.get_bounds(param, sigma) for chain in chains])):
+    for i,(c, (l,m,r)) in enumerate(zip(colors, [(chain.get_bounds(param, sigma, maxlike=True)) for chain in chains])):
         plt.plot([l,r], [i,i], c=c)
         plt.scatter(m, i, zorder=2,c=c)
 
@@ -186,6 +265,28 @@ def plot_1d(param, chains, labels, truth=None, sigma=0.3, baseline=True):
     
     return fig
 
+def plot_1ds(chains, params, labels, sigma=1, figsize=(6,3)):
+
+    fig = plt.figure(figsize=figsize)
+    axes = fig.add_gridspec(1, len(params), hspace=0, wspace=0).subplots(sharey='row')
+
+    colors = default_colors[1:]
+
+    for param, ax in zip(params, axes):
+        ax.tick_params(length=0)
+        ax.axvline(0, c='#aaa', ls='dashed')    
+
+        for i,(c, (l,m,r)) in enumerate(zip(colors, [(chain.get_bounds(param, sigma, maxlike=True)) for chain in chains])):
+            ax.plot([l,r], [i,i], c=c)
+            ax.scatter(m, i, zorder=2,c=c)
+
+        ax.set_yticks(np.arange(len(chains)))
+        ax.set_yticklabels(labels)
+        ax.set_ylim(-0.3 + len(chains),-0.7)
+        ax.set_xlabel(fparams.param_to_latex(param))
+    
+    return fig, axes
+
 def plot_1d_post(param, chains, labels=None, truth=None, sigma=3, figsize=(2,2)):
     fig, ax = plt.subplots(figsize=(2,2))
     
@@ -195,7 +296,7 @@ def plot_1d_post(param, chains, labels=None, truth=None, sigma=3, figsize=(2,2))
     x = np.linspace(mean - sigma*std, mean + sigma*std, 50)
 
     for chain, c, ls in zip(chains, default_colors, default_linestyles):
-        ax.plot(x, chain.get_1d_kde(param)(x), c=c, ls=ls)
+        ax.plot(x, chain.get_density_1d(param).Prob(x), c=c, ls=ls)
 
     ax.axvline(truth[param], ls='dashed', alpha=0.3)
     ax.set_xlabel(fparams.param_to_latex(param))

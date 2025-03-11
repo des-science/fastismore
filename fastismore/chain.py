@@ -317,7 +317,92 @@ class Chain:
     def get_mean(self, params):
         return self.get_MCSamples().mean(params)
 
-    def get_bounds(self, param, sigma=1):
+    def thin(self, target_size):
+
+        weights = self.get_weights()
+        mask = np.random.choice(len(weights), size=target_size, replace=True, p=weights)
+        
+        # filter the chain:
+        print(f'Keeping {target_size} out of {len(weight)} samples.')
+        for key, value in self._data.items():
+            self._data[key] = value[mask]
+        self.N = target_size
+
+    def bernoulli_thin(self, temperature=1, nrepeats=1):
+
+        log_weight = np.log(self.get_weights())
+        new_weight = np.exp((1. - temperature) * log_weight)
+        log_weight = temperature*(log_weight - np.amax(log_weight))
+
+        # do the trial:
+        mask = np.zeros(len(log_weight)).astype(bool)
+        sample_repeat = np.zeros(len(log_weight)).astype(int)
+        for i in range(nrepeats):
+            temp = np.random.binomial(1, np.exp(log_weight))
+            sample_repeat += temp.astype(int)
+            mask = np.logical_or(mask, temp.astype(bool))
+        new_weight = sample_repeat*new_weight
+
+        # filter the chain:
+        print(f'Keeping {mask.sum()} out of {len(mask)} samples.')
+        for key, value in self._data.items():
+            self._data[key] = value[mask]
+        self.N = mask.sum()
+    
+    def get_bounds(self, param, sigma=1, method='peak_isolike', maxlike=False):
+        if method == 'peak_isolike':
+            return self.get_bounds_peak_isolike(param, sigma=sigma, maxlike=maxlike)
+        else:
+            raise Exception('Method not implemented.')
+    
+    @functools.cache
+    def get_bounds_peak_isolike(self, param, sigma=1, maxlike=False):
+        lower, upper, _, _ = self.get_MCSamples().get1DDensity(param).getLimits(sp.special.erf(sigma/np.sqrt(2)))
+        if maxlike:
+            return lower, self.get_peak_1d(param), upper
+        else:
+            return lower, upper
+
+    @functools.cache
+    def get_bounds_peak_isolike_legacy(self, param, sigma=1):
+        print(f'Getting {sigma}σ bounds for {param}')
+        pdf = self.get_1d_kde(param)
+
+        x_grid   = np.linspace(pdf.dataset.min(), pdf.dataset.max(), 10000)
+        pdf_grid = pdf(x_grid)
+
+        cdf_grid = np.cumsum(pdf_grid)
+        cdf_grid /= cdf_grid[-1]
+        cdf = sp.interpolate.interp1d(x_grid, cdf_grid, fill_value=(0, 1), bounds_error=False)
+
+        peak_grid = np.argmax(pdf_grid)
+
+        left_ipdf  = sp.interpolate.interp1d(
+            (pdf_grid[:peak_grid][::-1]),
+            x_grid[:peak_grid][::-1],
+            bounds_error=False
+        )
+            
+        right_ipdf = sp.interpolate.interp1d(
+            (pdf_grid[peak_grid:]),
+            x_grid[peak_grid:],
+            bounds_error=False
+        )
+
+        ipdf_range = \
+            max((pdf_grid[:peak_grid]).min(), (pdf_grid[peak_grid:]).min()), \
+            min((pdf_grid[:peak_grid]).max(), (pdf_grid[peak_grid:]).max())
+
+        cdf_goal = sp.special.erf(sigma / np.sqrt(2))
+
+        opt_func = lambda like: np.abs(cdf(right_ipdf(like)) - cdf(left_ipdf(like)) - cdf_goal)
+        opt_result = sp.optimize.minimize_scalar(opt_func, bounds=ipdf_range)
+
+        print(f'Bounds converged')
+
+        return left_ipdf(opt_result.x), x_grid[peak_grid], right_ipdf(opt_result.x)
+
+    def get_bounds_mean_symmetric(self, param, sigma=1):
         mean = self.get_mean([param])[0]
         vals = self.on_params([param])[:, 0]
         weights = self.get_weights()
@@ -325,12 +410,27 @@ class Chain:
         i = np.argsort(vals)
 
         iright = i[vals[i] > mean]
-        ileft = i[vals[i] < mean][::-1]
+        ileft  = i[vals[i] < mean][::-1]
 
         right = vals[iright[np.argmax(np.cumsum(weights[iright]) > sp.special.erf(sigma / np.sqrt(2)) / 2)]]
         left  = vals[ileft [np.argmax(np.cumsum(weights[ileft])  > sp.special.erf(sigma / np.sqrt(2)) / 2)]]
 
         return left, mean, right
+
+    
+    def get_bounds_quantiles(self, param, sigma=1):
+        p = sp.special.erf(sigma/np.sqrt(2))
+        quantiles = (1-p)/2, 0.5, (1+p)/2
+
+        vals = self.on_params([param])[:, 0]
+        weights = self.get_weights()
+
+        i = np.argsort(vals)
+
+        cdf = np.cumsum(weights[i])
+        cdf /= cdf[-1]
+
+        return vals[i][[np.searchsorted(cdf, q) for q in quantiles]]
 
     def get_ESS(self):
         """compute and return effective sample size."""
@@ -368,9 +468,13 @@ class Chain:
             }
         return self.ESS_dict
 
+    @functools.cache
     def get_1d_kde(self, param):
         kde = sp.stats.gaussian_kde(self.on_params([param])[:,0], weights=self.get_weights())
         return kde
+
+    def get_density_1d(self, param):
+        return self.get_MCSamples().get1DDensity(param)
 
     def get_sigma_1d(self, param, a, b):
         left, right, signal = a, b, 1
@@ -407,6 +511,14 @@ class Chain:
         j, i = np.unravel_index(np.argmax(density.P), density.P.shape)
         return density.x[i], density.y[j]
 
+    def get_peak_1d(self, param):
+        density = self.get_density_1d(param)
+        return sp.optimize.minimize_scalar(lambda x: -density.Prob(x)).x
+
+        # density = self.get_1d_kde(param)
+        # return sp.optimize.minimize_scalar(lambda x: -density(x),
+        #     bounds=(density.dataset.min(), density.dataset.max())).x
+
     def find_sigma_of_point(self, point, param1, param2):
         # finds the distance between point and closest vertex in nsigma contour
         def distance_to_nsigma_contour(sigma):
@@ -421,6 +533,140 @@ class Chain:
         return sp.optimize.minimize_scalar(
             distance_to_nsigma_contour, bounds=[1e-4, 8]
         ).x
+
+    def get_param_differences(self, baseline=None, params=None, min_weight=1e-3, iterations=None):
+
+        if params is None:
+            params = self.get_params()
+        
+        if baseline is None:
+            baseline = self.base
+
+        if iterations is None: # compute all pairs
+            values = self.on_params(params)[np.newaxis,:,:] - baseline.on_params(params)[:,np.newaxis,:]
+            values = values.reshape(-1, values.shape[-1])
+
+            weights = self.get_weights() * baseline.get_weights()[:, np.newaxis]
+            weights = weights.ravel()
+        else: # iterate with different lags between sample sets
+            lotta_samples = self     if self.N > baseline.N else baseline
+            fewer_samples = baseline if self.N > baseline.N else self
+
+            values  = np.empty((lotta_samples.N*iterations, len(params)))
+            weights = np.empty( lotta_samples.N*iterations)
+
+            for lag in range(iterations):
+                start = int(lag/iterations*fewer_samples.N)
+                indices = range(start, start+lotta_samples.N)
+                
+                values[lag*lotta_samples.N:(lag+1)*lotta_samples.N, :] = \
+                    lotta_samples.on_params(params) - np.take(fewer_samples.on_params(params), indices, axis=0, mode='wrap')
+                
+                weights[lag*lotta_samples.N:(lag+1)*lotta_samples.N] = \
+                    lotta_samples.get_weights() * np.take(fewer_samples.get_weights(), indices, mode='wrap')
+
+        # Removing low-weight samples
+        if min_weight > 0:
+            max_weight = np.max(weights)
+            mask = weights > min_weight*max_weight
+            values = values[mask]
+            weights = weights[mask]
+
+        # Var(x - y) = Var(x) + Var(y) ~ 2*Var(x)
+        # Here we remove that factor of 2
+        average = np.average(values, weights=weights, axis=0) 
+        values -= average # center distribution
+        values /= np.sqrt(2) # shring it
+        values += average # shift it back to original position
+        
+        data = {p:c for p,c in zip(params, values.T)}
+        data['weight'] = weights
+        
+        differences = Chain(data=data)
+            
+        differences.filename = baseline.filename
+
+        differences.truth = {p:0 for p in params}
+
+        return differences
+
+    def get_1d_shift(self, param, baseline=None):
+        if baseline is None:
+            baseline = self.base
+        a, b = baseline.get_mean(param), self.get_mean(param)
+        return baseline.get_sigma_1d(param, a, b), self.get_sigma_1d(param, a, b)
+
+    def get_2d_shift_peak(self, param1, param2, baseline=None, base_posterior=True):
+        if baseline is None:
+            baseline = self.base
+
+        posterior, peak = self, baseline
+
+        if base_posterior:
+            posterior, peak = peak, posterior
+            
+        return posterior.find_sigma_of_point(
+            peak.get_peak_2d(param1, param2), param1, param2
+        )
+
+    def get_2d_shift_gaussian(self, param1, param2, baseline=None, base_posterior=True, mean=True):
+        if baseline is None:
+            baseline = self.base
+
+        inv_cov = np.linalg.inv(
+            (baseline if base_posterior else self).get_MCSamples().cov([param1, param2])
+        )
+        if mean:
+            p = self.get_mean([param1, param2]) - baseline.get_mean([param1, param2])
+        else:
+            p = np.array(self.get_peak_2d(param1, param2)) - \
+                np.array(baseline.get_peak_2d(param1, param2))
+
+        return np.einsum("i,ij,j", p, inv_cov, p)
+
+    def get_2d_shift_mean(self, param1, param2, base_posterior=True):
+        posterior = baseline if base_posterior else self
+        contaminated = self.get_mean([param1, param2])
+        baseline = baseline.get_mean([param1, param2])
+
+        sigma_base = posterior.find_sigma_of_point(baseline, param1, param2)
+        sigma_cont = posterior.find_sigma_of_point(contaminated, param1, param2)
+
+        return np.sqrt(2) * sp.special.erfinv(sp.special.erf(sigma_cont/np.sqrt(2)) - sp.special.erf(sigma_base/np.sqrt(2)))
+
+
+    def get_2d_shift(self, param1, param2, mode="max", gaussian=False, base_posterior=True):
+        if mode not in ["mean", "max"]:
+            raise Exception(f"Mode has to be 'mean' or 'max'. Given value was {mode}")
+
+        if gaussian:
+            return self.get_2d_shift_gaussian(
+                param1, param2, base_posterior, mode == "mean"
+            )
+        elif mode == "mean":
+            return self.get_2d_shift_mean(param1, param2, base_posterior)
+        elif mode == "max":
+            return self.get_2d_shift_peak(param1, param2, base_posterior)
+
+    def get_jaccard_index(self, sigma, param1, param2, baseline=None):
+        """Returns the Jaccard index between baseline and contaminated n-sigma contours.
+        Jaccard index is the ratio intersection/union of the two sets. Its value is 0
+        when there is no overlap and 1 when there's complete overlap."""
+        import shapely as shp
+
+        if baseline is None:
+            baseline = self.base
+
+        poly_baseline = shp.geometry.Polygon(
+            baseline.get_contour_vertices(sigma, param1, param2)[0]
+        )
+        poly_contaminated = shp.geometry.Polygon(
+            self.get_contour_vertices(sigma, param1, param2)[0]
+        )
+
+        intersection = poly_baseline.intersection(poly_contaminated)
+        union = poly_baseline.union(poly_contaminated)
+        return intersection.area / union.area
 
 class ImportanceChain(Chain):
     """Description: object to load the importance weights, plot and compute statistics.
@@ -548,112 +794,6 @@ class ImportanceChain(Chain):
     def get_fiducial(self, *args, **kwargs):
         return self.base.get_fiducial(*args, **kwargs)
 
-    def get_1d_shift(self, param):
-        a, b = self.base.get_mean(param), self.get_mean(param)
-        return self.base.get_sigma_1d(param, a, b), self.get_sigma_1d(param, a, b)
-
-    def get_2d_shift_peak(self, param1, param2, base_posterior=True):
-        posterior, peak = self, self.base
-
-        if base_posterior:
-            posterior, peak = peak, posterior
-            
-        return posterior.find_sigma_of_point(
-            peak.get_peak_2d(param1, param2), param1, param2
-        )
-
-    def get_2d_shift_gaussian(self, param1, param2, base_posterior=True, mean=True):
-        inv_cov = np.linalg.inv(
-            (self.base if base_posterior else self).get_MCSamples().cov([param1, param2])
-        )
-        if mean:
-            p = self.get_mean([param1, param2]) - self.base.get_mean([param1, param2])
-        else:
-            p = np.array(self.get_peak_2d(param1, param2)) - \
-                np.array(self.base.get_peak_2d(param1, param2))
-
-        return np.einsum("i,ij,j", p, inv_cov, p)
-
-    def get_2d_shift_mean(self, param1, param2, base_posterior=True):
-        posterior = self.base if base_posterior else self
-        contaminated = self.get_mean([param1, param2])
-        baseline = self.base.get_mean([param1, param2])
-
-        sigma_base = posterior.find_sigma_of_point(baseline, param1, param2)
-        sigma_cont = posterior.find_sigma_of_point(contaminated, param1, param2)
-
-        return np.sqrt(2) * sp.special.erfinv(sp.special.erf(sigma_cont/np.sqrt(2)) - sp.special.erf(sigma_base/np.sqrt(2)))
-
-
-    def get_2d_shift(self, param1, param2, mode="max", gaussian=False, base_posterior=True):
-        if mode not in ["mean", "max"]:
-            raise Exception(f"Mode has to be 'mean' or 'max'. Given value was {mode}")
-
-        if gaussian:
-            return self.get_2d_shift_gaussian(
-                param1, param2, base_posterior, mode == "mean"
-            )
-        elif mode == "mean":
-            return self.get_2d_shift_mean(param1, param2, base_posterior)
-        elif mode == "max":
-            return self.get_2d_shift_peak(param1, param2, base_posterior)
-
-    def get_jaccard_index(self, sigma, param1, param2):
-        """Returns the Jaccard index between baseline and contaminated n-sigma contours.
-        Jaccard index is the ratio intersection/union of the two sets. Its value is 0
-        when there is no overlap and 1 when there's complete overlap."""
-        import shapely as shp
-
-        poly_baseline = shp.geometry.Polygon(
-            self.base.get_contour_vertices(sigma, param1, param2)[0]
-        )
-        poly_contaminated = shp.geometry.Polygon(
-            self.get_contour_vertices(sigma, param1, param2)[0]
-        )
-
-        intersection = poly_baseline.intersection(poly_contaminated)
-        union = poly_baseline.union(poly_contaminated)
-        return intersection.area / union.area
-
     def load_data(self, *args, **kwargs):
         nsample = self.base.nsample if hasattr(self.base, "nsample") else 0
         super().load_data(*args, **kwargs, nsample=nsample)
-
-    def get_param_differences(self, baseline=None, params=None, min_weight=1e-3):
-
-        if params is None:
-            params = self.get_params()
-        
-        if baseline is None:
-            baseline = self.base
-
-        values = self.on_params(params)[np.newaxis,:,:] - baseline.on_params(params)[:,np.newaxis,:]
-        values = values.reshape(-1, values.shape[-1])
-
-        weights = self.get_weights() * baseline.get_weights()[:, np.newaxis]
-        weights = weights.ravel()
-
-        # Removing low-weight samples
-        if min_weight > 0:
-            max_weight = np.max(weights)
-            mask = weights > min_weight*max_weight
-            values = values[mask]
-            weights = weights[mask]
-
-        # Var(x - y) = Var(x) + Var(y) ~ 2*Var(x)
-        # Here we remove that factor of 2
-        average = np.average(values, weights=weights, axis=0) 
-        values -= average # center distribution
-        values /= np.sqrt(2) # shring it
-        values += average # shift it back to original position
-        
-        data = {p:c for p,c in zip(params, values.T)}
-        data['weight'] = weights
-        
-        differences = Chain(data=data)
-            
-        differences.filename = self.base.filename
-
-        differences.truth = {p:0 for p in params}
-
-        return differences
