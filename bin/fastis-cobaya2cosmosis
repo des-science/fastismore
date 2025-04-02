@@ -1,0 +1,67 @@
+#!/usr/bin/env python
+
+import yaml, glob, argparse
+import numpy as np
+
+cobaya2cosmosis_dict = {
+    'logA': 'cosmological_parameters--logAs',
+    'ns': 'cosmological_parameters--ns',
+    'theta_MC_100': 'cosmological_parameters--thetastar',
+    'ombh2': 'cosmological_parameters--ombh2',
+    'omch2': 'cosmological_parameters--omch2',
+    'tau': 'cosmological_parameters--tau',
+    'w': 'cosmological_parameters--w',
+    'wa': 'cosmological_parameters--wa',
+    'hrdrag': 'cosmological_parameters--hrdrag',
+    'omm': 'cosmological_parameters--omega_m',
+    'weight': 'weight',
+    'minuslogpost': 'post',
+    'minuslogprior': 'prior',
+}
+
+def main():
+    parser = argparse.ArgumentParser(description = '')
+
+    parser.add_argument('cobaya_dir', help = 'Cobaya base directory.')
+    parser.add_argument('output_filename', help = 'output file name.')
+
+    args = parser.parse_args()
+
+    
+    basedir = args.cobaya_dir
+    
+    with open(f'{basedir}/chain.input.yaml', 'r') as file:
+        config = yaml.safe_load(file)
+    
+    ranges = {}
+    for p,v in config['params'].items():
+        if('prior' in v):
+            ranges[p] = (v['prior']['min'], v['ref']['loc'], v['prior']['max'])
+            
+    ranges_string = []
+    for p,v in ranges.items():
+        ranges_string.append(f'## {cobaya2cosmosis_dict[p].split("--")[1]:40s} = {v[0]}  {v[1]}  {v[2]}')
+    
+    with open(f'{basedir}/chain.1.txt') as f:
+        labels = np.array(f.readline()[1:-1].lower().split())
+    mask = [l in cobaya2cosmosis_dict for l in labels.tolist()]
+    
+    data = [np.loadtxt(f) for f in glob.glob(f'{basedir}/chain.[0-9].txt')]
+    data = np.concatenate([d[int(0.5*d.shape[0]):,mask] for d in data])
+    np.random.shuffle(data)
+    
+    header = f'''# {' '.join([cobaya2cosmosis_dict[l] for l in labels.tolist() if l in cobaya2cosmosis_dict])}
+## START_OF_PARAMS_INI
+## [runtime]
+## sampler = {list(config['sampler'].keys())[0]}
+## END_OF_PARAMS
+## START_OF_VALUES
+## [cosmological_parameters]
+{'\n'.join(ranges_string)}
+## END_OF_VALUES_INI'''
+    
+    np.savetxt(args.output_filename, data, header=header, comments='')
+
+
+if __name__ == '__main__':
+    main()
