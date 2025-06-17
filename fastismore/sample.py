@@ -85,6 +85,10 @@ class Block():
             log_weight_ix = np.where(labels == 'log_weight')[0]
             self._weight = lambda vec: float(vec[old_weight_ix]) * np.nan_to_num(np.exp(float(vec[log_weight_ix])))
             self.weighted = True
+        elif 'log_weight' in labels:
+            weight_i = np.where(labels == 'log_weight')[0]
+            self._weight = lambda vec: np.exp(float(vec[weight_i]))
+            self.weighted = True
         else:
             print("WARNING: Haven't found weights for the baseline chain.")
             self._weight = lambda vec: 1.0

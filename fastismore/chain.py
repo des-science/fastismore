@@ -153,6 +153,9 @@ class Chain:
             print("Sampler is {}".format(sampler))
         return sampler
 
+    def has_param(self, param):
+        return param in self.data.keys() or (hasattr(self, 'base') and param in self.base.data.keys())
+
     def get_params(self):
         params = [l for l in self.data.keys() if l not in fparams.not_param]
 
@@ -245,15 +248,24 @@ class Chain:
     def get_ranges(self, filename=None, params=None):
         """loads range values from values.ini file or chain file"""
 
+        if hasattr(self, 'ranges'):
+            return self.ranges
+
         if params == None:
             params = self.get_params()
 
+        def gr(x):
+            if len(x) == 3:
+                return [float(x[0]), float(x[2])]
+            elif len(x) == 2:
+                return [float(x[0]), float(x[1])]
+            else:
+                return [None, None]
+
         self.ranges = {
             p: (
-                (lambda x: [float(x[0]), float(x[2])] if len(x) == 3 else [None, None])(
-                    self.values().get(*p.split("--")).split()
-                )
-                if self.values().has_option(*p.split("--"))
+                gr(self.values().get(*p.split("--")).split()) \
+                if self.values().has_option(*p.split("--")) \
                 else [None, None]
             )
             for p in params
@@ -267,18 +279,26 @@ class Chain:
         if params == None:
             params = self.get_params()
 
-        return gd.MCSamples(
-            samples=self.on_params(params=params),
-            weights=self.get_weights(),
+        mc_params = {
+            'samples': self.on_params(params=params),
+            'weights': self.get_weights(),
             # loglikes=self.get_likes(),
-            ranges=self.get_ranges(params=params),
-            sampler=(
-                "nested" if self.get_sampler() in ["multinest", "polychord"] else "mcmc"
-            ),
-            names=params,
-            labels=[l for l in self.get_labels(params=params)],
-            settings=self.getdist_settings,
-        )
+            'names': params,
+            'labels': [l for l in self.get_labels(params=params)],
+            'settings': self.getdist_settings,
+        }
+        try:
+            mc_params.update({
+                'ranges':  self.get_ranges(params=params),
+                'sampler': (
+                    "nested" if self.get_sampler() in ["multinest", "polychord"] else "mcmc"
+                ),
+            })
+            
+        except:
+            print('Ranges not found.')
+
+        return gd.MCSamples(**mc_params)
 
     def get_weights(self):
         if self.weight_option == "weight" and "weight" in self.data.keys():
@@ -348,6 +368,22 @@ class Chain:
         for key, value in self._data.items():
             self._data[key] = value[mask]
         self.N = mask.sum()
+
+    def find_sigma_1d(self, param, ref=0, **kwargs):
+        opt_kwargs={'bracket': (1e-3, 2)}
+        opt_kwargs.update(kwargs)
+        
+        peak = self.get_peak_1d(param)
+        if ref == peak:
+            return 0.
+        elif ref > peak:
+            func_opt = lambda sigma: self.get_bounds(param, sigma=sigma)[1] - ref
+        elif ref < peak:
+            func_opt = lambda sigma: self.get_bounds(param, sigma=sigma)[0] - ref
+        result = sp.optimize.root_scalar(func_opt, **opt_kwargs).root
+        if ref > peak:
+            result *= -1
+        return result
     
     def get_bounds(self, param, sigma=1, method='peak_isolike', maxlike=False):
         if method == 'peak_isolike':
@@ -503,8 +539,11 @@ class Chain:
 
     def get_contour_vertices(self, sigma, param1, param2):
         density = self.get_density_grid(param1, param2)
-        contour_levels = density.getContourLevels([sp.special.erf(sigma / np.sqrt(2))])
-        return contourpy.contour_generator(density.x, density.y, density.P).lines(contour_levels)
+        contour_levels = density.getContourLevels(sp.special.erf(np.atleast_1d(sigma) / np.sqrt(2)))
+        contours = []
+        for c in np.atleast_1d(contour_levels):
+            contours += contourpy.contour_generator(density.x, density.y, density.P).lines(c)
+        return contours
 
     def get_peak_2d(self, param1, param2):
         density = self.get_density_grid(param1, param2)
@@ -534,7 +573,7 @@ class Chain:
             distance_to_nsigma_contour, bounds=[1e-4, 8]
         ).x
 
-    def get_param_differences(self, baseline=None, params=None, min_weight=1e-3, iterations=None):
+    def get_param_differences(self, baseline=None, params=None, min_weight=0, boost=None):
 
         if params is None:
             params = self.get_params()
@@ -542,28 +581,38 @@ class Chain:
         if baseline is None:
             baseline = self.base
 
-        if iterations is None: # compute all pairs
+        if boost is None: # compute all pairs
             values = self.on_params(params)[np.newaxis,:,:] - baseline.on_params(params)[:,np.newaxis,:]
             values = values.reshape(-1, values.shape[-1])
 
             weights = self.get_weights() * baseline.get_weights()[:, np.newaxis]
             weights = weights.ravel()
-        else: # iterate with different lags between sample sets
-            lotta_samples = self     if self.N > baseline.N else baseline
-            fewer_samples = baseline if self.N > baseline.N else self
+        else:
+            import tensiometer.mcmc_tension
+            diff_gd = tensiometer.mcmc_tension.parameter_diff_weighted_samples(
+                self.get_MCSamples(params),
+                baseline.get_MCSamples(params),
+                boost=boost
+            )
+        
+            values = diff_gd.samples
+            weights = diff_gd.weights
+        # else: # iterate with different lags between sample sets
+        #     lotta_samples = self     if self.N > baseline.N else baseline
+        #     fewer_samples = baseline if self.N > baseline.N else self
 
-            values  = np.empty((lotta_samples.N*iterations, len(params)))
-            weights = np.empty( lotta_samples.N*iterations)
+        #     values  = np.empty((lotta_samples.N*iterations, len(params)))
+        #     weights = np.empty( lotta_samples.N*iterations)
 
-            for lag in range(iterations):
-                start = int(lag/iterations*fewer_samples.N)
-                indices = range(start, start+lotta_samples.N)
+        #     for lag in range(iterations):
+        #         start = int(lag/iterations*fewer_samples.N)
+        #         indices = range(start, start+lotta_samples.N)
                 
-                values[lag*lotta_samples.N:(lag+1)*lotta_samples.N, :] = \
-                    lotta_samples.on_params(params) - np.take(fewer_samples.on_params(params), indices, axis=0, mode='wrap')
+        #         values[lag*lotta_samples.N:(lag+1)*lotta_samples.N, :] = \
+        #             lotta_samples.on_params(params) - np.take(fewer_samples.on_params(params), indices, axis=0, mode='wrap')
                 
-                weights[lag*lotta_samples.N:(lag+1)*lotta_samples.N] = \
-                    lotta_samples.get_weights() * np.take(fewer_samples.get_weights(), indices, mode='wrap')
+        #         weights[lag*lotta_samples.N:(lag+1)*lotta_samples.N] = \
+        #             lotta_samples.get_weights() * np.take(fewer_samples.get_weights(), indices, mode='wrap')
 
         # Removing low-weight samples
         if min_weight > 0:
@@ -585,8 +634,12 @@ class Chain:
         differences = Chain(data=data)
             
         differences.filename = baseline.filename
+        
+        differences._params = baseline._params
+        differences._values = baseline._values
 
         differences.truth = {p:0 for p in params}
+        differences.ranges = None
 
         return differences
 
@@ -780,7 +833,7 @@ class ImportanceChain(Chain):
         return w / w.sum()
 
     def get_ranges(self, *args, **kwargs):
-        return self.base.get_ranges(*args, **kwargs)
+        return self.ranges if hasattr(self, 'ranges') else self.base.get_ranges(*args, **kwargs)
 
     def get_sampler(self, *args, **kwargs):
         return self.base.get_sampler(*args, **kwargs)

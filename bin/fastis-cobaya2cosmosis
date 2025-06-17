@@ -9,11 +9,13 @@ cobaya2cosmosis_dict = {
     'theta_MC_100': 'cosmological_parameters--thetastar',
     'ombh2': 'cosmological_parameters--ombh2',
     'omch2': 'cosmological_parameters--omch2',
+    'omegamh2': 'cosmological_parameters--ommh2',
     'tau': 'cosmological_parameters--tau',
     'w': 'cosmological_parameters--w',
     'wa': 'cosmological_parameters--wa',
-    'hrdrag': 'cosmological_parameters--hrdrag',
-    'omm': 'cosmological_parameters--omega_m',
+    'H0rdrag': 'cosmological_parameters--hrdrag',
+    'omegam': 'cosmological_parameters--omega_m',
+    'h0': 'cosmological_parameters--h0',
     'weight': 'weight',
     'minuslogpost': 'post',
     'minuslogprior': 'prior',
@@ -47,7 +49,7 @@ def main():
     mask = [l in cobaya2cosmosis_dict for l in labels.tolist()]
     
     data = [np.loadtxt(f) for f in glob.glob(f'{basedir}/chain.[0-9].txt')]
-    data = np.concatenate([d[int(0.5*d.shape[0]):,mask] for d in data])
+    data = np.concatenate([d[int(0.2*d.shape[0]):,mask] for d in data])
     np.random.shuffle(data)
     
     header = f'''# {' '.join([cobaya2cosmosis_dict[l] for l in labels.tolist() if l in cobaya2cosmosis_dict])}

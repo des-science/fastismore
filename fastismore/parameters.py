@@ -1,4 +1,5 @@
 import numpy as np
+import scipy
 
 __all__ = ['not_param', 'add_extra', 'param_to_label', 'param_to_latex']
 
@@ -16,11 +17,13 @@ not_param = [
     'weight',
     'old_post',
     'log_weight',
+    'chi2',
+    'chi2_joint'
 ]
 
 label_dict = {
     'cosmological_parameters--tau':  r'\tau',
-    'cosmological_parameters--w':  r'w',
+    'cosmological_parameters--w':  r'w_0',
     'cosmological_parameters--wa':  r'w_a',
     'cosmological_parameters--wp':  r'w_p',
     'cosmological_parameters--w0_fld':  r'w_{GDM}',
@@ -43,6 +46,9 @@ label_dict = {
     'cosmological_parameters--massless_nu': r'\nu_\text{massless}',
     'cosmological_parameters--omega_k': r'\Omega_k',
     'cosmological_parameters--yhe': r'Y_\text{He}',
+    'cosmological_parameters--mnu': r'm_\nu',
+    'cosmological_parameters--s8_07': r'\sigma_8(\Omega_{\rm m}/0.3)^{0.7}',
+    'cosmological_parameters--xi_interaction': r'\xi',
 
     'intrinsic_alignment_parameters--a': r'A_{IA}',
     'intrinsic_alignment_parameters--alpha': r'\alpha_{IA}',
@@ -89,7 +95,34 @@ label_dict = {
     'npg_parameters--a4': 'A_4',
     'modified_gravity--sigma0': r"\Sigma_0",
     'modified_gravity--mu0': r"\mu_0",
+    'modified_gravity--p1': "p_1",
+    'modified_gravity--s8sigma0': r"S_8 \Sigma_0",
 }
+
+def calc_rd(h, Omega_m, obh2):
+    h_fid = h
+    hubble_to_Mpc = 2997.92458
+    hubble_distance_fid = hubble_to_Mpc / h_fid # in Mpc
+    
+    Tcmb = 2.7260 * 8.6173303e-5 # in eV
+    Tnu = (4./11.)**(1./3.) * Tcmb
+    H0 = h_fid * 2.13311968e-33   # in eV
+    Mplanck = 1.22089007e28      # in eV
+    crit_dens = 3./8./np.pi * (H0 * Mplanck)**2 # in eV^4
+    Omega_g = np.pi**2 / 15 * Tcmb**4 / crit_dens
+    Neff = 3.044
+    Omega_nu_rel = 7./8. * (4./11.)**(4./3.) * Neff * Omega_g # relativistic neutrinos
+    
+    Omega_de = 1 - Omega_m - Omega_g - Omega_nu_rel
+    inv_efunc = lambda z: 1./np.sqrt(Omega_m*(1+z)**3 + (Omega_g + Omega_nu_rel)*(1+z)**4 + Omega_de)
+    
+    cs = lambda obh2: np.vectorize(lambda z: 1/np.sqrt(3 * (1 + 3./4. * obh2 / h_fid**2 / Omega_g / (1+z))))
+
+    zdrag = 1060
+    
+    r_dec = lambda z_dec: (lambda obh2, Omega_m: hubble_distance_fid*scipy.integrate.quad(lambda a: inv_efunc(1/a - 1) * cs(obh2)(1/a - 1) / a**2, 0, 1/(1+z_dec))[0])
+    rdrag = r_dec(zdrag)
+    return rdrag(obh2,Omega_m)
 
 def add_extra(data, extra=None, weights=None):
     if extra is not None:
@@ -97,22 +130,33 @@ def add_extra(data, extra=None, weights=None):
     if 'cosmological_parameters--sigma_8' in data.keys():
         data['cosmological_parameters--s8'] = \
             data['cosmological_parameters--sigma_8']*(data['cosmological_parameters--omega_m']/0.3)**0.5
+        data['cosmological_parameters--s8_07'] = \
+            data['cosmological_parameters--sigma_8']*(data['cosmological_parameters--omega_m']/0.3)**0.7
 
     if 'cosmological_parameters--h0' in data.keys():
         data['cosmological_parameters--ommh2'] = \
             data['cosmological_parameters--omega_m']*data['cosmological_parameters--h0']**2
+        
 
     if 'cosmological_parameters--omega_b' in data.keys():
         data['cosmological_parameters--ombh2'] = \
             data['cosmological_parameters--omega_b']*data['cosmological_parameters--h0']**2
+        data['cosmological_parameters--rdh'] = np.array([calc_rd(h, obh2, om) for h,obh2,om in zip(
+            data['cosmological_parameters--h0'],
+            data['cosmological_parameters--ombh2'],
+            data['cosmological_parameters--omega_m']
+        )])*data['cosmological_parameters--h0']
 
-    if 'cosmological_parameters--ommh2' in data.keys():
+    if 'cosmological_parameters--ommh2' in data.keys() and 'cosmological_parameters--ombh2' in data.keys():
         data['cosmological_parameters--omch2'] = \
             data['cosmological_parameters--ommh2'] - data['cosmological_parameters--ombh2']
 
     if 'cosmological_parameters--omega_b' in data.keys():
         data['cosmological_parameters--omega_c'] = \
             data['cosmological_parameters--omega_m'] - data['cosmological_parameters--omega_b']
+        
+    if 'modified_gravity--sigma0' in data.keys():
+        data['modified_gravity--s8sigma0'] = data['modified_gravity--sigma0']*data['cosmological_parameters--s8']
     
     if 'cosmological_parameters--w' in data.keys() and 'cosmological_parameters--wa' in data.keys() and weights is not None:
         w0, wa = data['cosmological_parameters--w'], data['cosmological_parameters--wa']
@@ -120,6 +164,13 @@ def add_extra(data, extra=None, weights=None):
         ap = 1. + w0wa_cov[0,1]/w0wa_cov[1,1]
         data['cosmological_parameters--ap'] = ap
         data['cosmological_parameters--wp'] = w0 + wa*(1. - ap)
+
+    
+    if 'rescale_pk_fz--sigma_8_0' in data.keys():
+        for i in range(9):
+            data[f'rescale_pk_fz--s8_{i}'] = \
+                data[f'rescale_pk_fz--sigma_8_{i}']*(data['cosmological_parameters--omega_m']/0.3)**0.5
+
 
     return data
 
