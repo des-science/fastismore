@@ -47,9 +47,29 @@ label_dict = {
     'cosmological_parameters--omega_k': r'\Omega_k',
     'cosmological_parameters--yhe': r'Y_\text{He}',
     'cosmological_parameters--mnu': r'm_\nu',
+    'cosmological_parameters--meffsterile': r'm_{\rm eff}',
     'cosmological_parameters--s8_07': r'\sigma_8(\Omega_{\rm m}/0.3)^{0.7}',
     'cosmological_parameters--xi_interaction': r'\xi',
-
+    'halo_model_parameters--detg_beta': r'\beta',
+    'rescale_pk_fz--alpha_cmb':r'$\alpha_{\rm CMB}$',\
+    'rescale_pk_fz--sigma_8_0':r'$\sigma_8^0$',\
+    'rescale_pk_fz--sigma_8_1':r'$\sigma_8^1$',\
+    'rescale_pk_fz--sigma_8_2':r'$\sigma_8^2$',\
+    'rescale_pk_fz--sigma_8_3':r'$\sigma_8^3$',\
+    'rescale_pk_fz--sigma_8_4':r'$\sigma_8^4$',\
+    'rescale_pk_fz--sigma_8_5':r'$\sigma_8^5$',\
+    'rescale_pk_fz--sigma_8_6':r'$\sigma_8^6$',\
+    'rescale_pk_fz--sigma_8_7':r'$\sigma_8^7$',\
+    'rescale_pk_fz--sigma_8_8':r'$\sigma_8^8$',\
+    'rescale_pk_fz--sigma_8_9':r'$\sigma_8^9$',\
+    'rescale_pk_fz--sigma_8_10':r'$\sigma_8^{10}$',\
+    'rescale_pk_fz--sigma_8_11':r'$\sigma_8^{11}$',\
+    'rescale_pk_fz--sigma_8_12':r'$\sigma_8^{12}$',\
+    'rescale_pk_fz--sigma_8_13':r'$\sigma_8^{13}$',\
+    'rescale_pk_fz--sigma_8_14':r'$\sigma_8^{14}$',\
+    'rescale_pk_fz--sigma_8_15':r'$\sigma_8^{15}$',\
+    'rescale_pk_fz--sigma_8_16':r'$\sigma_8^{16}$',\
+    
     'intrinsic_alignment_parameters--a': r'A_{IA}',
     'intrinsic_alignment_parameters--alpha': r'\alpha_{IA}',
     'bin_bias--b1': r'b_1',
@@ -82,6 +102,11 @@ label_dict = {
     'intrinsic_alignment_parameters--alpha2': r'\alpha_2',
     'intrinsic_alignment_parameters--bias_ta': r'b_ta',
     'intrinsic_alignment_parameters--z_piv': r'z_\text{piv}',
+    # IA free amplitude per bin
+    'intrinsic_alignment_parameters--a_1': r'A_{z_1}',
+    'intrinsic_alignment_parameters--a_2': r'A_{z_2}',
+    'intrinsic_alignment_parameters--a_3': r'A_{z_3}',
+    'intrinsic_alignment_parameters--a_4': r'A_{z_4}',
 
     'mag_alpha_lens--alpha_1': r'\alpha_\text{lens}^1',
     'mag_alpha_lens--alpha_2': r'\alpha_\text{lens}^2',
@@ -124,6 +149,17 @@ def calc_rd(h, Omega_m, obh2):
     rdrag = r_dec(zdrag)
     return rdrag(obh2,Omega_m)
 
+def add_s8(data, extra=None, weights=None):
+    """
+    Add S8 to the data dictionary if it exists.
+    """
+    if extra is not None:
+        data.update(extra)
+    
+    if 'cosmological_parameters--sigma_8' in data.keys():
+        data['cosmological_parameters--s8'] = \
+            data['cosmological_parameters--sigma_8']*(data['cosmological_parameters--omega_m']/0.3)**0.5
+    return data
 def add_extra(data, extra=None, weights=None):
     if extra is not None:
         data.update(extra)

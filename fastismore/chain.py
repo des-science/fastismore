@@ -34,7 +34,7 @@ class Chain:
         self.N = len(list(data.values())[0])
 
     @classmethod
-    def from_file(cls, filename, boosted=False, weight_option="weight", getdist_settings=None):
+    def from_file(cls, filename, boosted=False, weight_option="weight", getdist_settings=None, add_extra=True):
         """Initialize chain with given filename (full path). Set boosted=True
         if you want to load a boosted chain. If boosted_chain_fn is passed,
         use that, otherwise use default format/path for Y3 (i.e. a
@@ -62,28 +62,19 @@ class Chain:
             self.load_boosted_data()
         else:
             self.load_data()
-
-        fparams.add_extra(self.data)
+        if add_extra: fparams.add_extra(self.data)
+        else: fparams.add_s8(self.data)
 
         return self
 
     def load_data(self, boosted=False, nsample=0):
-        data = []
-
+        data = np.loadtxt(self.filename)
         with open(self.filename) as f:
             labels = np.array(f.readline()[1:-1].lower().split())
             mask = ["data_vector" not in l for l in labels]
-            for line in f.readlines():
-                if "#nsample" in line:
-                    nsample = int(line.replace("#nsample=", ""))
-                    if VERBOSE:
-                        print(f"Found nsample = {nsample}")
-                elif "#" in line:
-                    continue
-                else:
-                    data.append(np.array(line.split(), dtype=np.double)[mask])
+            data = data[:, mask]  # filter data with mask
         if nsample != 0:
-            self.nsample = nsample
+            self.nsample = data.shape[0]
         self.data = {
             labels[mask][i].lower(): col
             for i, col in enumerate(np.array(data)[-nsample:, :].T)
@@ -291,7 +282,7 @@ class Chain:
             mc_params.update({
                 'ranges':  self.get_ranges(params=params),
                 'sampler': (
-                    "nested" if self.get_sampler() in ["multinest", "polychord"] else "mcmc"
+                    "nested" if self.get_sampler() in ["multinest", "nautilus", "polychord"] else "mcmc"
                 ),
             })
             
@@ -316,6 +307,17 @@ class Chain:
                     'Using "exp(log_weight)*old_weight" as weight for baseline chain.'
                 )
             w = self.data["old_weight"]
+            return w / w.sum()
+        elif (
+            self.weight_option == "log_weight"
+            and "log_weight" in self.data.keys()
+            and "old_weight" not in self.data.keys()
+        ):
+            if VERBOSE:
+                print(
+                    'Using "exp(log_weight)" as weight for nautilus chain.'
+                )
+            w = np.exp(self.data["log_weight"])
             return w / w.sum()
         elif self.weight_option == "old_weight" and "old_weight" in self.data.keys():
             if VERBOSE:
