@@ -3,22 +3,80 @@
 import pickle, argparse
 import numpy as np
 
+NF_name_map = {
+    'ns':'cosmological_parameters--n_s',\
+    'As1e9': 'cosmological_parameters--a_s_1e9',\
+    'omegab':'cosmological_parameters--omega_b',\
+    'omegam':'cosmological_parameters--omega_m',\
+    'omegak':'cosmological_parameters--omega_k',\
+    'H0':'cosmological_parameters--h0',\
+    'w':'cosmological_parameters--w',\
+    'wa':'cosmological_parameters--wa',\
+    'mnu':'cosmological_parameters--mnu',\
+    'Sigma_0': 'modified_gravity--Sigma0',\
+    'mu_0': 'modified_gravity--mu0',\
+    'p1': 'modified_gravity--p1',\
+    'chi2__joint_log_posterior':'like',\
+    'S8':'S8',\
+    'weight':'weight',\
+}
+
 def get_dict_from_pickle(filename):
     with open(filename, 'rb') as file:
         data = pickle.load(file)
-        return {
-            'cosmological_parameters--omega_m': data['omegam'],
-            'cosmological_parameters--h0': data['H0']/100,
-            'cosmological_parameters--omega_b': data['omegab'] ,
-            'cosmological_parameters--n_s': data['ns'],
-            'cosmological_parameters--a_s_1e9': data['As1e9'],
-            'cosmological_parameters--w': data['w'],
-            'cosmological_parameters--wa': data['wa'],
-            'cosmological_parameters--mnu': data['mnu'],
-            'cosmological_parameters--sigma_8': data['S8']*(0.3/data['omegam'])**0.5,
-            'like': data.loglikes,
-            'weight': data.weights,
-        }
+        #import ipdb; ipdb.set_trace()
+        #params_lookfor = ['omegam', 'H0', 'omegab', 'ns', 'As1e9', 'w', 'wa', 'mnu', 'S8', 'weight', 'log_weight', 'like']
+        keys_in_pickle = data.paramNames.list() 
+        output_dic = {}
+
+        for name in NF_name_map.keys():
+            if name in keys_in_pickle: output_dic[ NF_name_map[name] ] = data[name]
+
+        if 'like' in keys_in_pickle: output_dic['like'] = data.loglikes
+        if 'weight' in keys_in_pickle: output_dic['weight'] = data.weights
+        if 'chi2__joint_log_posterior' in keys_in_pickle: output_dic['like'] = data['chi2__joint_log_posterior']
+        output_dic['cosmological_parameters--sigma_8'] = data['S8']*(0.3/data['omegam'])**0.5
+
+
+        if 'weight' in keys_in_pickle: output_dic['weight'] = data.weights
+        else: output_dic['weight'] = data.weights/np.sum(data.weights)
+        # if 'log_weight' in keys_in_pickle: output_dic['log_weight'] = data.weights
+
+        """
+        if 'omegam' in keys_in_pickle: output_dic['cosmological_parameters--omega_m'] = data['omegam']
+        if 'H0' in keys_in_pickle: output_dic['cosmological_parameters--h0'] = data['H0']/100
+        if 'omegab' in keys_in_pickle: output_dic['cosmological_parameters--omega_b'] = data['omegab']
+        if 'ns' in keys_in_pickle: output_dic['cosmological_parameters--n_s'] = data['ns']
+        if 'As1e9' in keys_in_pickle: output_dic['cosmological_parameters--a_s_1e9'] = data['As1e9']
+        if 'w' in keys_in_pickle: output_dic['cosmological_parameters--w'] = data['w']
+        if 'wa' in keys_in_pickle: output_dic['cosmological_parameters--wa'] = data['wa']
+        if 'mnu' in keys_in_pickle: output_dic['cosmological_parameters--mnu'] = data['mnu']
+        if 'S8' in keys_in_pickle: 
+            output_dic['S8'] = data['S8']
+            output_dic['cosmological_parameters--sigma_8'] = data['S8']*(0.3/data['omegam'])**0.5
+        if 'like' in keys_in_pickle: output_dic['like'] = data.loglikes
+
+        if 'weight' in keys_in_pickle: output_dic['weight'] = data.weights
+        #else: output_dic['weight'] = data.weights/np.sum(data.weights)
+        # if 'log_weight' in keys_in_pickle: output_dic['log_weight'] = data.weights
+        """
+        #import ipdb; ipdb.set_trace()
+
+        return output_dic
+
+        # return {
+        #     'cosmological_parameters--omega_m': data['omegam'],
+        #     'cosmological_parameters--h0': data['H0']/100,
+        #     'cosmological_parameters--omega_b': data['omegab'] ,
+        #     'cosmological_parameters--n_s': data['ns'],
+        #     'cosmological_parameters--a_s_1e9': data['As1e9'],
+        #     'cosmological_parameters--w': data['w'],
+        #     'cosmological_parameters--wa': data['wa'],
+        #     'cosmological_parameters--mnu': data['mnu'],
+        #     'cosmological_parameters--sigma_8': data['S8']*(0.3/data['omegam'])**0.5,
+        #     'like': data.loglikes,
+        #     'weight': data.weights,
+        # }
     
 def get_comments(filename):
     comments = []
