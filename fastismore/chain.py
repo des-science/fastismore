@@ -34,7 +34,7 @@ class Chain:
         self.N = len(list(data.values())[0])
 
     @classmethod
-    def from_file(cls, filename, boosted=False, weight_option="weight", getdist_settings=None, add_extra=True):
+    def from_file(cls, filename, boosted=False, weight_option="weight", getdist_settings=None, add_extra=False):
         """Initialize chain with given filename (full path). Set boosted=True
         if you want to load a boosted chain. If boosted_chain_fn is passed,
         use that, otherwise use default format/path for Y3 (i.e. a
@@ -554,7 +554,10 @@ class Chain:
 
     def get_peak_1d(self, param):
         density = self.get_density_1d(param)
-        return sp.optimize.minimize_scalar(lambda x: -density.Prob(x)).x
+        #return sp.optimize.minimize_scalar(lambda x: -density.Prob(x)).x
+        f = lambda x: -density.Prob(x)
+        result = sp.optimize.minimize_scalar(f, bounds=(density.x.min(), density.x.max()), method='bounded') 
+        return result.x
 
         # density = self.get_1d_kde(param)
         # return sp.optimize.minimize_scalar(lambda x: -density(x),
