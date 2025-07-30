@@ -30,9 +30,9 @@ __all__ = [
 figwidth = 440/72.27
 plot_ratio = 1.5 #0.5*(1+5**0.5)
 
-default_colors = ['#000000', '#3E89DA', '#F87A44', '#427B48', '#927FC3']
-default_linestyles = ['-', ':', '--', '-.', (0, (3, 1, 1, 1, 1, 1))]
-default_markers = ['o', '<', '>', 'v', '^']
+default_colors = 2*['#000000', '#3E89DA', '#F87A44', '#427B48', '#927FC3'] 
+default_linestyles = ['-', ':', '--', '-.', (0, (3, 1, 1, 1, 1, 1))] 
+default_markers = 2*['o', '<', '>', 'v', '^'] 
 default_linewidth = 1.5
 default_truth_opacity = 0.4
 
@@ -118,7 +118,7 @@ def plot_2d(param1, param2, chains, truth, labels=None, sigma=0.3, figsize=None,
     ax.set_ylabel(fparams.param_to_latex(param2))
     return fig
 
-def plot_triangle(params, chains, truth, labels, sigma, show_peaks=True, param_labels=None, figsize=(20,20), show_1d=True, show_bands=True, ranges=None, colors=None):
+def plot_triangle(params, chains, truth, labels, sigma, show_peaks=True, param_labels=None, figsize=(20,20), show_1d=True, show_bands=True, ranges=None, colors=None, linestyles=None):
 
     list_chains = chains if isinstance(chains, (list, tuple)) else [chains]
 
@@ -130,7 +130,7 @@ def plot_triangle(params, chains, truth, labels, sigma, show_peaks=True, param_l
 
     print('Plotting 2D')
     for ax,a,b in zip(axes[i > j], j[i > j], i[i > j]):
-        _subplot_2d(ax=ax, param1=params[a], param2=params[b], chains=list_chains, truth=truth, labels=labels, sigma=sigma, show_peaks=show_peaks, colors=colors)
+        _subplot_2d(ax=ax, param1=params[a], param2=params[b], chains=list_chains, truth=truth, labels=labels, sigma=sigma, show_peaks=show_peaks, colors=colors, linestyles=linestyles)
         ax.tick_params(direction='inout')
         ax.set_xlabel(fparams.param_to_latex(params[a]))
         ax.set_ylabel(fparams.param_to_latex(params[b]))
@@ -166,7 +166,7 @@ def plot_triangle(params, chains, truth, labels, sigma, show_peaks=True, param_l
             ax.yaxis.set_major_locator(mpl.ticker.AutoLocator())
             ax.yaxis.set_major_formatter(mpl.ticker.ScalarFormatter())
             ax._shared_axes['x'].remove(ax)
-            _subplot_1d(ax=ax, param=params[a], chains=list_chains, truth=truth, labels=labels, sigma=sigma, show_bands=show_bands)
+            _subplot_1d(ax=ax, param=params[a], chains=list_chains, truth=truth, labels=labels, sigma=sigma, colors=colors, show_bands=show_bands, linestyles=linestyles)
             ax.set_xlabel(fparams.param_to_latex(params[a]))
             ax.set_yticks([])
             ax.margins(x=0)
@@ -177,15 +177,16 @@ def plot_triangle(params, chains, truth, labels, sigma, show_peaks=True, param_l
         
     for ax in axes.flatten():
         ax.label_outer()
-        
-    legend_handles, legend_labels, _ = mpl.legend._parse_legend_args([axes[0,0]])
+
+    legend_handles, legend_labels, _, _ = mpl.legend._parse_legend_args([axes[0,0]])
     
-    (axes[0,0] if show_1d else axes[1,1]).legend(legend_handles,
-        legend_labels,
-        loc=(1.05,0.2),
-        ncol=(2 if (show_peaks and len(list_chains) > 1) else 1),
-        frameon=False
-    )
+    # (axes[0,0] if show_1d else axes[1,1]).legend(legend_handles,
+    #     legend_labels,
+    #     #loc='best',
+    #     loc=(1.05,0.2),
+    #     ncol=(2 if (show_peaks and len(list_chains) > 1) else 1),
+    #     frameon=False
+    # )
 
     if ranges is not None:
         for m,p in enumerate(params):
@@ -205,12 +206,12 @@ def plot_triangle(params, chains, truth, labels, sigma, show_peaks=True, param_l
 
     return fig, axes
 
-def _subplot_2d(ax, param1, param2, chains, truth, labels=None, sigma=0.3, show_peaks=True, colors=None):
+def _subplot_2d(ax, param1, param2, chains, truth, labels=None, sigma=0.3, show_peaks=True, colors=None, linestyles=None):
     istart = 1 if len(default_colors) - len(chains) == 1 else 0
-    linestyles = default_linestyles[istart:]
+    if linestyles is None: linestyles = default_linestyles[istart:]
+
     markers = default_markers[istart:]
-    if colors is None:
-        colors = default_colors[istart:]
+    if colors is None: colors = default_colors[istart:]
     markersize=6
     lw=default_linewidth
 
@@ -236,11 +237,11 @@ def _subplot_2d(ax, param1, param2, chains, truth, labels=None, sigma=0.3, show_
     
     return ax
 
-def _subplot_1d(ax, param, chains, truth, labels=None, sigma=0.3, show_bands=True):
+def _subplot_1d(ax, param, chains, truth, labels=None, sigma=0.3, show_bands=True, colors=None, linestyles=None, markers=None):
     istart = 1 if len(default_colors) - len(chains) == 1 else 0
-    linestyles = default_linestyles[istart:]
-    markers = default_markers[istart:]
-    colors = default_colors[istart:]
+    if linestyles is None: linestyles = default_linestyles[istart:]
+    if markers is None: markers = default_markers[istart:]
+    if colors is None: colors = default_colors[istart:]
     markersize=6
     lw=default_linewidth
 
