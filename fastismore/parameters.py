@@ -40,7 +40,7 @@ label_dict = {
     'cosmological_parameters--a_s':  r'A_s',
     'cosmological_parameters--omnuh2':  r'\Omega_{\nu}',
     'cosmological_parameters--sigma_8': r'\sigma_8',
-    'cosmological_parameters--sigma_12': r'\sigma_12',
+    'cosmological_parameters--sigma_12': r'\sigma_{12}',
     'cosmological_parameters--s8': r'S_8',
     'cosmological_parameters--massive_nu': r'\nu_\text{massive}',
     'cosmological_parameters--massless_nu': r'\nu_\text{massless}',
@@ -49,6 +49,9 @@ label_dict = {
     'cosmological_parameters--mnu': r'm_\nu',
     'cosmological_parameters--s8_07': r'\sigma_8(\Omega_{\rm m}/0.3)^{0.7}',
     'cosmological_parameters--xi_interaction': r'\xi',
+     'cosmological_parameters--a_s_1e9': '10^9 A_s',
+     'cosmological_parameters--s8_07': 'S_8^{0.7}',
+     'cosmological_parameters--rdh': 'r_d h',
 
     'intrinsic_alignment_parameters--a': r'A_{IA}',
     'intrinsic_alignment_parameters--alpha': r'\alpha_{IA}',
@@ -57,6 +60,7 @@ label_dict = {
     'bin_bias--b3': r'b_3',
     'bin_bias--b4': r'b_4',
     'bin_bias--b5': r'b_5',
+    'bin_bias--b6': r'b_6',
     'shear_calibration_parameters--m1': r'm_1',
     'shear_calibration_parameters--m2': r'm_2',
     'shear_calibration_parameters--m3': r'm_3',
@@ -76,6 +80,7 @@ label_dict = {
     'bias_lens--b3': r'b_3',
     'bias_lens--b4': r'b_4',
     'bias_lens--b5': r'b_5',
+    'bias_lens--b6': r'b_6',
     'intrinsic_alignment_parameters--a1': r'A_1',
     'intrinsic_alignment_parameters--a2': r'A_2',
     'intrinsic_alignment_parameters--alpha1': r'\alpha_1',
@@ -88,6 +93,41 @@ label_dict = {
     'mag_alpha_lens--alpha_3': r'\alpha_\text{lens}^3',
     'mag_alpha_lens--alpha_4': r'\alpha_\text{lens}^4',
     'mag_alpha_lens--alpha_5': r'\alpha_\text{lens}^5',
+    'mag_alpha_lens--alpha_6': r'\alpha_\text{lens}^6',
+    'shear_calibration_parameters--m1_uncorr': 'm_1',
+    'shear_calibration_parameters--m2_uncorr': 'm_2',
+    'shear_calibration_parameters--m3_uncorr': 'm_3',
+    'shear_calibration_parameters--m4_uncorr': 'm_4',
+    
+    'mag_alpha_lens--alpha_1': r'\alpha^\ell_1',
+    'mag_alpha_lens--alpha_3': r'\alpha^\ell_3',
+    'mag_alpha_lens--alpha_4': r'\alpha^\ell_4', 
+    'mag_alpha_lens--alpha_5': r'\alpha^\ell_5', 
+    'mag_alpha_lens--alpha_6': r'\alpha^\ell_6',
+    
+    'source_photoz_u--u_0_uncorr': 'u^s_{0}',
+    'source_photoz_u--u_1_uncorr': 'u^s_{1}',
+    'source_photoz_u--u_2_uncorr': 'u^s_{2}',
+    'source_photoz_u--u_3_uncorr': 'u^s_{3}',
+    'source_photoz_u--u_4_uncorr': 'u^s_{4}',
+    'source_photoz_u--u_5_uncorr': 'u^s_{5}',
+    'source_photoz_u--u_6_uncorr': 'u^s_{6}',
+    
+    'lens_photoz_u--u_0_0': r'u^\ell_{00}',
+    'lens_photoz_u--u_0_1': r'u^\ell_{01}',
+    'lens_photoz_u--u_0_2': r'u^\ell_{02}',
+    'lens_photoz_u--u_2_0': r'u^\ell_{20}',
+    'lens_photoz_u--u_2_1': r'u^\ell_{21}',
+    'lens_photoz_u--u_2_2': r'u^\ell_{22}',
+    'lens_photoz_u--u_3_0': r'u^\ell_{30}',
+    'lens_photoz_u--u_3_1': r'u^\ell_{31}',
+    'lens_photoz_u--u_3_2': r'u^\ell_{32}',
+    'lens_photoz_u--u_4_0': r'u^\ell_{40}',
+    'lens_photoz_u--u_4_1': r'u^\ell_{41}',
+    'lens_photoz_u--u_4_2': r'u^\ell_{42}',
+    'lens_photoz_u--u_5_0': r'u^\ell_{50}',
+    'lens_photoz_u--u_5_1': r'u^\ell_{51}',
+    'lens_photoz_u--u_5_2': r'u^\ell_{52}',
     
     'npg_parameters--a1': 'A_1',
     'npg_parameters--a2': 'A_2',
@@ -164,6 +204,8 @@ def add_extra(data, extra=None, weights=None):
         ap = 1. + w0wa_cov[0,1]/w0wa_cov[1,1]
         data['cosmological_parameters--ap'] = ap
         data['cosmological_parameters--wp'] = w0 + wa*(1. - ap)
+        data['cosmological_parameters--w0wa'] = w0 + wa
+        
 
     
     if 'rescale_pk_fz--sigma_8_0' in data.keys():
