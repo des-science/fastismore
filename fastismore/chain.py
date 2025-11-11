@@ -315,8 +315,19 @@ class Chain:
                 print(
                     'Using "exp(log_weight)*old_weight" as weight for baseline chain.'
                 )
-            w = self.data["old_weight"]
+            w = np.exp(self.data['log_weight'])*self.data["old_weight"]
             return w / w.sum()
+        elif (
+            self.weight_option == "log_weight"
+            and "log_weight" in self.data.keys()
+        ):
+            if VERBOSE:
+                print(
+                    'Using "exp(log_weight)" as weight for baseline chain.'
+                )
+            w = np.exp(self.data["log_weight"])
+            return w / w.sum()
+            
         elif self.weight_option == "old_weight" and "old_weight" in self.data.keys():
             if VERBOSE:
                 print('Using column "old_weight" as weight for baseline chain.')
