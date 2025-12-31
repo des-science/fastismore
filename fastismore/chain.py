@@ -273,7 +273,7 @@ class Chain:
         mc_params = {
             'samples': self.on_params(params=params),
             'weights': self.get_weights(),
-            # loglikes=self.get_likes(),
+            'loglikes': self.get_likes(),
             'names': params,
             'labels': [l for l in self.get_labels(params=params)],
             'settings': self.getdist_settings,
@@ -328,7 +328,7 @@ class Chain:
         raise Exception(f"No weight criteria satisfied. weight_option = {self.weight_option}")
 
     def get_likes(self):
-        return self.data["like"]
+        return self.data["post"]
 
     def get_mean_err(self, params):
         return self.get_MCSamples().std(params) / self.get_ESS() ** 0.5
