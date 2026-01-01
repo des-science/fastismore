@@ -328,7 +328,10 @@ class Chain:
         raise Exception(f"No weight criteria satisfied. weight_option = {self.weight_option}")
 
     def get_likes(self):
-        return self.data["post"]
+        if 'post' in self.data.keys():
+            return self.data["post"]
+        else:
+            return self.data["like"]
 
     def get_mean_err(self, params):
         return self.get_MCSamples().std(params) / self.get_ESS() ** 0.5
