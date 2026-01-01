@@ -330,8 +330,12 @@ class Chain:
     def get_likes(self):
         if 'post' in self.data.keys():
             return self.data["post"]
-        else:
+        elif 'like' in self.data.keys():
             return self.data["like"]
+        else:
+            # if both don't exist, return dummy array of nans
+            print ("No likelihoods found in chain.")
+            return np.full(self.N, np.nan)
 
     def get_mean_err(self, params):
         return self.get_MCSamples().std(params) / self.get_ESS() ** 0.5
