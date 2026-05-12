@@ -42,6 +42,11 @@ def get_dict_from_pickle(filename):
         else: output_dic['weight'] = data.weights/np.sum(data.weights)
         # if 'log_weight' in keys_in_pickle: output_dic['log_weight'] = data.weights
 
+        if 'sigma8' not in keys_in_pickle and 'S8' not in keys_in_pickle:
+            output_dic['cosmological_parameters--sigma_8'] = data['S8']*(0.3/data['omegam'])**0.5
+        if 'S8' not in keys_in_pickle and 'sigma8' in keys_in_pickle and 'omegam' in keys_in_pickle:
+            output_dic['S8'] = data['sigma8']*(data['omegam']/0.3)**0.5
+
         """
         if 'omegam' in keys_in_pickle: output_dic['cosmological_parameters--omega_m'] = data['omegam']
         if 'H0' in keys_in_pickle: output_dic['cosmological_parameters--h0'] = data['H0']/100
