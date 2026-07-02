@@ -178,7 +178,9 @@ def plot_triangle(params, chains, truth, labels, sigma, show_peaks=True, param_l
     for ax in axes.flatten():
         ax.label_outer()
 
-    legend_handles, legend_labels, _, _ = mpl.legend._parse_legend_args([axes[0,0]])
+    try: legend_handles, legend_labels, _, _ = mpl.legend._parse_legend_args([axes[0,0]])
+    except ValueError: legend_handles, legend_labels, _ = mpl.legend._parse_legend_args([axes[0,0]])
+    
     
     # (axes[0,0] if show_1d else axes[1,1]).legend(legend_handles,
     #     legend_labels,
