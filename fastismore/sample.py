@@ -13,7 +13,7 @@ import argparse, configparser
 import sys, os
 from tqdm import tqdm
 
-LIKE_COLUMN_PRIORITY = iter(['like', 'post', '2pt_like--chi2'])
+LIKE_COLUMN_PRIORITY = iter(['like', 'post', '2pt_like--chi2', 'data_vector--2pt_chi2'])
 
 #  Imports 2pt_like module
 try:
@@ -32,7 +32,7 @@ class ImportanceSamplingLikelihood(twopointlike.TwoPointGammatMargLikelihood):
 
 class Block():
     """ This class mimicks cosmosis' data block. The likelihood object reads from it."""
-    def __init__(self, labels, like_column='like'):
+    def __init__(self, labels, like_column='like', data_vector_points=False):
         self.labels = labels
 
         # if like_column not found, look for others in the LIKE_COLUMN_PRIORITY order
@@ -48,10 +48,9 @@ class Block():
             if 'prior' not in labels:
                 raise Exception("Couldn't find column: prior.")
             prior_i = np.where(labels == 'prior')[0]
+            if len(prior_i) > 1: prior_i = np.array([prior_i[-1]])
             post_i = np.where(labels == 'post')[0]
             self._like = lambda vec: float(vec[post_i] - vec[prior_i])
-            self._post = lambda vec: float(vec[post_i])
-            self._prior = lambda vec: float(vec[prior_i])
         elif 'chi2' in like_column:
             print("Using old loglike = -0.5*{}.".format(like_column))
             if like_column not in labels:
@@ -81,22 +80,39 @@ class Block():
             weight_i = np.where(labels == 'weight')[0]
             self._weight = lambda vec: float(vec[weight_i])
             self.weighted = True
-        elif 'old_weight' in labels and 'log_weight' in labels: ##this is the case if did cosmosis IS of a low-res chain with higher res settings. Saves the old weight and log(IS_reweighting) but need to calc the new weight here (should really do in the cosmosis sampler so this is a hack)
+        elif 'old_log_weight' in labels and 'log_weight' in labels: ##this is the case if did cosmosis IS of a low-res chain with higher res settings. Saves the old weight and log(IS_reweighting) but need to calc the new weight here (should really do in the cosmosis sampler so this is a hack)
             print('WARNING: Using "exp(log_weight)*old_weight" as weight for baseline chain.')
-            old_weight_ix = np.where(labels == 'old_weight')[0]
+            old_weight_ix = np.where(labels == 'old_log_weight')[0]
             log_weight_ix = np.where(labels == 'log_weight')[0]
             self._weight = lambda vec: float(vec[old_weight_ix]) * np.nan_to_num(np.exp(float(vec[log_weight_ix])))
             self.weighted = True
         elif 'log_weight' in labels:
             weight_i = np.where(labels == 'log_weight')[0]
-            self._weight = lambda vec: np.nan_to_num(np.exp(float(vec[weight_i])))
+            self._weight = lambda vec: np.exp(float(vec[weight_i]))
             self.weighted = True
         else:
             print("WARNING: Haven't found weights for the baseline chain.")
             self._weight = lambda vec: 1.0
             self.weighted = False
 
-        theory_i = np.array(['data_vector--2pt_theory_' in l for l in labels])
+        #import ipdb; ipdb.set_trace()
+        # SJ begin small adjustment for Neffmeff
+        #theory_i = np.array(['data_vector--2pt_theory_' in l for l in labels])
+        if not data_vector_points: 
+            theory_i = np.array(['data_vector--2pt_theory_' in l for l in labels])
+        else: 
+            #import ipdb; ipdb.set_trace()
+            theory_i = np.zeros(len(labels), dtype=bool)
+            for i, l in enumerate(labels):
+                if 'data_vector--2pt_theory_' in l:
+                    index = int(l.split('data_vector--2pt_theory_')[-1])
+                    if index < float(data_vector_points): theory_i[i] = True
+                    else: theory_i[i] = False
+                else: theory_i[i] = False
+            #theory_i = np.array(theory_i, dtype=bool)
+            #import ipdb; ipdb.set_trace()
+            # SJ end
+
 
         ## NW begin
         if theory_i.sum() == 0:
@@ -125,12 +141,6 @@ class Block():
     def get_like(self):
         return self._like(self.row)
 
-    def get_post(self):
-        return self._post(self.row)
-
-    def get_prior(self):
-        return self._prior(self.row)
-        
     def get_weight(self):
         return self._weight(self.row)
 
@@ -281,7 +291,7 @@ def pc_to_cosmosis_sample(pc_sample_list, cosmosis_labels):
 #     self.N = len(self.data[labels_pc[0]])
 #     return self.data
 
-def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2pt_like', like_column='like', include_norm=False, pc_chain_fn=None, max_samples=1e9, start_index=0):
+def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2pt_like', like_column='like', include_norm=False, pc_chain_fn=None, max_samples=1e9, start_index=0, data_vector_points=False):
     """This code computes importance weights for a data vector given a chain with data_vector--2pt_theory_### columns. It saves an output file with weights and likelihoods for samples of both the baseline (old) and importance sampled (new) chains.
     
     Parameters:
@@ -298,7 +308,7 @@ def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2p
     Returns:
     dict: Containing keys 'old_weights', 'new_weights', 'old_likes', 'new_likes'
     """
-
+    #import ipdb; ipdb.set_trace()
     # Load labels from chain file
     with open(bl_chain_fn) as f:
         labels = np.array(f.readline()[1:-1].lower().split())
@@ -314,13 +324,13 @@ def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2p
 
     # Gets data vector and inverse covariance from likelihood object
     data_vector = np.atleast_1d(like_obj.data_y)
-
+    #import ipdb; ipdb.set_trace()
     # include_norm is true if covariance is not fixed
     # include_norm = args.include_norm
     include_norm = include_norm or not like_obj.constant_covariance
     include_norm = include_norm or params.get_bool('include_norm', default=False)
 
-    block = Block(labels, like_column)
+    block = Block(labels, like_column, data_vector_points=data_vector_points)
 
     if block.theory_len != len(data_vector):
         raise Exception('Theory and data vectors are not same length ({} and {}.\n Labels = {}'.format(block.theory_len, len(data_vector), labels))
@@ -381,43 +391,36 @@ def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2p
                     continue
                 mysample = line.split() if not pc_chain_fn else pc_to_cosmosis_sample(line.split(), cosmosis_labels)
                 block.update(np.array(mysample, dtype=np.float64))
+
+                # Check if covariance is set and whether we need to constantly update it
+                if ((not like_obj.constant_covariance) & (same_cov_count < 200)) or precision_matrix is None:
+                    covariance_matrix = like_obj.extract_covariance(block) #slow. recomputes cholesky of cov_orig each time
+                    precision_matrix = like_obj.extract_inverse_covariance(block)
+                    if np.allclose(covariance_matrix, like_obj.cov_orig):
+                        same_cov_count += 1 ## updating cov is very expensive and some of our chains incorrectly have constant_covariance = False even though it is constant. If we've done this a lot and it's clearly not varying with cosmology, then stop calcing.
+                    #if same_cov_count == 199:
+                        #print('\nWARNING: like_obj.constant_covariance==False, but no change with 200 different cosmologies so assuming cosmology independent from now on for significant speedup.\n If this is in error (i.e. should be cosmology dependence in covariance), then IS output will be wrong!')
+
+                # Core computation
+                d = data_vector - block.get_theory()
+
+                new_like = -np.einsum('i,ij,j', d, precision_matrix, d)/2
                 old_like = block.get_like()
 
-                if np.isinf(old_like):
-                    # if old likelihood is infinite, make IS weight zero. 
-                    new_like = -np.inf
-                    log_is_weight = -np.inf
+                if include_norm :
+                    # Check if log_det is set and whether we need to constantly update it
+                    if not like_obj.constant_covariance:
+                        log_det = log_det_orig + like_obj.logdet_fac
+                        # log_det = like_obj.extract_covariance_log_determinant(block)
+                    else:
+                        log_det = log_det_orig
+                    new_like += -0.5*log_det
+                    if 'chi' in like_column:
+                        old_like += -0.5*log_det  # if like_column is chi2, then old_like is -0.5*chi2, so need to add the norm factor to it as well
 
-                else: 
-                    # Check if covariance is set and whether we need to constantly update it
-                    if ((not like_obj.constant_covariance) & (same_cov_count < 200)) or precision_matrix is None:
-                        covariance_matrix = like_obj.extract_covariance(block) #slow. recomputes cholesky of cov_orig each time
-                        precision_matrix = like_obj.extract_inverse_covariance(block)
-                        if np.allclose(covariance_matrix, like_obj.cov_orig):
-                            same_cov_count += 1 ## updating cov is very expensive and some of our chains incorrectly have constant_covariance = False even though it is constant. If we've done this a lot and it's clearly not varying with cosmology, then stop calcing.
-                        #if same_cov_count == 199:
-                            #print('\nWARNING: like_obj.constant_covariance==False, but no change with 200 different cosmologies so assuming cosmology independent from now on for significant speedup.\n If this is in error (i.e. should be cosmology dependence in covariance), then IS output will be wrong!')
-
-                    # Core computation
-                    d = data_vector - block.get_theory()
-                    new_like = -np.einsum('i,ij,j', d, precision_matrix, d)/2
-                    #if not np.isnan(precision_matrix[0][0]): 
-                    #    import ipdb; ipdb.set_trace() #debugging
-                    if include_norm :
-                        # Check if log_det is set and whether we need to constantly update it
-                        if not like_obj.constant_covariance:
-                            log_det = log_det_orig + like_obj.logdet_fac
-                            # log_det = like_obj.extract_covariance_log_determinant(block)
-                        else:
-                            log_det = log_det_orig
-                            
-                        new_like += -0.5*log_det
-                        log_is_weight = new_like - old_like
-                #import ipdb; ipdb.set_trace()
                 #old_like = block.get_like()
                 old_weight = block.get_weight()
-                #old_post = block.get_post()
-                #old_prior = block.get_prior()
+                log_is_weight = new_like - old_like
                 weight = np.nan_to_num(np.exp(log_is_weight))
 
                 if block.weighted:
@@ -446,9 +449,8 @@ def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2p
             log_is_weights = np.array(log_is_weights)
             Nsample = len(log_is_weights)
 
-            mask_finite = np.isfinite(log_is_weights)
-            log_is_weights_mean = np.average(-log_is_weights[mask_finite], weights=old_weights[mask_finite])
-            log_is_weights_rms = np.average(log_is_weights[mask_finite]**2, weights=old_weights[mask_finite])**0.5
+            log_is_weights_mean = np.average(-log_is_weights, weights=old_weights)
+            log_is_weights_rms = np.average(log_is_weights**2, weights=old_weights)**0.5
 
             def write_output(line=''):
                 line = str(line)
@@ -490,8 +492,9 @@ def main():
                help ='Likelihood column name in the baseline chain. (likelihoods--2pt_like if chain was run with external data sets)')
     # SJ end
 
-    parser.add_argument('--include-norm', dest = 'include_norm', action='store_true',
-               help = 'Force include_norm option.')
+    parser.add_argument('--include-norm', dest = 'include_norm', 
+                        action='store_true',
+                        help = 'Force include_norm option.')
     #NW
     parser.add_argument('--pc-chain-fn', dest = 'pc_chain_fn', required = False,
                     help = 'Optional filepath to the polychord chain output. If included, load the baseline chain from the polychord output files rather than cosmosis output (useful if boost_posterior=T).')
@@ -499,6 +502,9 @@ def main():
                help = 'Max number of samples before exiting (for debugging purposes).')
     parser.add_argument('--overwrite', dest = 'overwrite', action='store_true',
                help = 'Force overwrite output file.')
+    parser.add_argument('--data_vector_points', dest = 'data_vector_points', 
+                        default=False, required = False, 
+               help = 'number of data vector points (for debugging purpose)')
     
     args = parser.parse_args()
     
@@ -519,7 +525,8 @@ def main():
                       like_column=args.like_column,
                       output_fn = args.output,
                       pc_chain_fn=args.pc_chain_fn,
-                      max_samples=args.max_samples)
+                      max_samples=args.max_samples,
+                      data_vector_points=args.data_vector_points)
 
 if __name__ == '__main__':
     main()
