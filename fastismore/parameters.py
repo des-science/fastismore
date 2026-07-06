@@ -18,7 +18,8 @@ not_param = [
     'old_post',
     'log_weight',
     'chi2',
-    'chi2_joint'
+    'chi2_joint',
+    'old_log_weight',
 ]
 
 label_dict = {
@@ -201,12 +202,11 @@ def add_extra(data, extra=None, weights=None):
         data['cosmological_parameters--ap'] = ap
         data['cosmological_parameters--wp'] = w0 + wa*(1. - ap)
 
-    
     if 'rescale_pk_fz--sigma_8_0' in data.keys():
         for i in range(9):
             data[f'rescale_pk_fz--s8_{i}'] = \
                 data[f'rescale_pk_fz--sigma_8_{i}']*(data['cosmological_parameters--omega_m']/0.3)**0.5
-
+            #del data[f'rescale_pk_fz--alpha_{i}']
 
     return data
 
