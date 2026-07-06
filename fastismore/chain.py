@@ -71,7 +71,11 @@ class Chain:
         data = np.loadtxt(self.filename)
         with open(self.filename) as f:
             labels = np.array(f.readline()[1:-1].lower().split())
-            mask = ["data_vector" not in l for l in labels]
+            mask1 = np.array(["data_vector" not in l for l in labels])
+            mask2 = np.array(["sigma_crit_inv_lens_source" not in l for l in labels])
+            mask3 = np.array(["rescale_pk_fz--alpha" not in l for l in labels])
+            mask = mask1*mask2*mask3
+            #import ipdb; ipdb.set_trace()
             data = data[:, mask]  # filter data with mask
         if nsample != 0:
             self.nsample = data.shape[0]
@@ -273,7 +277,7 @@ class Chain:
         mc_params = {
             'samples': self.on_params(params=params),
             'weights': self.get_weights(),
-            # loglikes=self.get_likes(),
+            'loglikes': self.get_likes(),
             'names': params,
             'labels': [l for l in self.get_labels(params=params)],
             'settings': self.getdist_settings,
@@ -328,7 +332,14 @@ class Chain:
         raise Exception(f"No weight criteria satisfied. weight_option = {self.weight_option}")
 
     def get_likes(self):
-        return self.data["like"]
+        if 'post' in self.data.keys():
+            return self.data["post"]
+        elif 'like' in self.data.keys():
+            return self.data["like"]
+        else:
+            # if both don't exist, return dummy array of nans
+            print ("No likelihoods found in chain.")
+            return np.full(self.N, np.nan)
 
     def get_mean_err(self, params):
         return self.get_MCSamples().std(params) / self.get_ESS() ** 0.5
