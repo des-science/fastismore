@@ -310,7 +310,20 @@ class Chain:
                 print(
                     'Using "exp(log_weight)*old_weight" as weight for baseline chain.'
                 )
-            w = self.data["old_weight"]
+            #w = self.data["old_weight"]
+            w = np.nan_to_num(np.exp(self.data["log_weight"])) * self.data["old_weight"]
+            return w / w.sum()
+        elif (
+            self.weight_option == "log_weight"
+            and "log_weight" in self.data.keys()
+            and "old_log_weight" in self.data.keys()
+        ):
+            if VERBOSE:
+                print(
+                    'Using "exp(log_weight)*old_log_weight" as weight for baseline chain.'
+                )
+            w = np.nan_to_num(np.exp(self.data["log_weight"] + self.data["old_log_weight"]))
+            #w = np.exp(self.data["log_weight"])
             return w / w.sum()
         elif (
             self.weight_option == "log_weight"
@@ -327,6 +340,11 @@ class Chain:
             if VERBOSE:
                 print('Using column "old_weight" as weight for baseline chain.')
             w = self.data["old_weight"]
+        elif self.weight_option == "old_log_weight" and "old_log_weight" in self.data.keys():
+            if VERBOSE:
+                print('Using column "old_log_weight" as weight for baseline chain.')
+            w = np.exp(self.data["old_log_weight"])
+            #import ipdb; ipdb.set_trace()
             return w / w.sum()
         
         raise Exception(f"No weight criteria satisfied. weight_option = {self.weight_option}")
