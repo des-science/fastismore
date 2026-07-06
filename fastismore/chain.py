@@ -320,7 +320,7 @@ class Chain:
         ):
             if VERBOSE:
                 print(
-                    'Using "exp(log_weight)*old_log_weight" as weight for baseline chain.'
+                    'Using "exp(log_weight + old_log_weight)" as weight for baseline chain.'
                 )
             w = np.nan_to_num(np.exp(self.data["log_weight"] + self.data["old_log_weight"]))
             #w = np.exp(self.data["log_weight"])
