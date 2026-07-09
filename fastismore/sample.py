@@ -32,7 +32,7 @@ class ImportanceSamplingLikelihood(twopointlike.TwoPointGammatMargLikelihood):
 
 class Block():
     """ This class mimicks cosmosis' data block. The likelihood object reads from it."""
-    def __init__(self, labels, like_column='like', data_vector_points=False):
+    def __init__(self, labels, like_column='like'):
         self.labels = labels
 
         # if like_column not found, look for others in the LIKE_COLUMN_PRIORITY order
@@ -56,6 +56,9 @@ class Block():
             if like_column not in labels:
                 raise Exception("Couldn't find column: {}.".format(like_column))
             chi_i = np.where(labels == like_column)[0]
+            if len(chi_i) > 1: 
+                chi_i = np.array([chi_i[0]])
+                print ('WARNING: Found multiple chi2 columns. Using the first one (index {}).'.format(chi_i))
             self._like = lambda vec: float(-0.5*vec[chi_i])
         else:
             print("Using old loglike = {}.".format(like_column))
@@ -97,21 +100,34 @@ class Block():
 
         #import ipdb; ipdb.set_trace()
         # SJ begin small adjustment for Neffmeff
-        #theory_i = np.array(['data_vector--2pt_theory_' in l for l in labels])
-        if not data_vector_points: 
-            theory_i = np.array(['data_vector--2pt_theory_' in l for l in labels])
-        else: 
-            #import ipdb; ipdb.set_trace()
-            theory_i = np.zeros(len(labels), dtype=bool)
+        # test whether there are two theory columns or not 
+        idx_theory = np.where(labels == 'data_vector--2pt_theory_0')[0] 
+        if len(idx_theory) > 1:
+            print("WARNING: Found multiple theory vector columns. Replace column names with 'old_dv' prefix for all but the first theory vector column.")
             for i, l in enumerate(labels):
-                if 'data_vector--2pt_theory_' in l:
-                    index = int(l.split('data_vector--2pt_theory_')[-1])
-                    if index < float(data_vector_points): theory_i[i] = True
-                    else: theory_i[i] = False
-                else: theory_i[i] = False
-            #theory_i = np.array(theory_i, dtype=bool)
-            #import ipdb; ipdb.set_trace()
-            # SJ end
+                if i >= idx_theory[1]:
+                    if 'data_vector--2pt_theory_' in l:
+                        l = 'old_dv' + l.split('data_vector')[-1]
+                        labels[i] = l 
+                    if 'sigma_crit_inv_lens_source-' in l:
+                        l = 'old_sigcrit' + l.split('sigma_crit_inv_lens_source')[-1]
+                        labels[i] = l 
+                    else: pass 
+                else: pass 
+
+        idx_sigcrit = np.where(labels == 'sigma_crit_inv_lens_source--sigma_crit_inv_1_1')[0] 
+        if len(idx_sigcrit) > 1:
+            print("WARNING: Found multiple sigcrit columns. Replace column names with 'old_sigcrit' prefix for all but the first sigcrit column.")
+            for i, l in enumerate(labels):
+                if i >= idx_sigcrit[1]:
+                    if 'sigma_crit_inv_lens_source--sigma_crit_inv' in l:
+                        l = 'old_sigcrit' + l.split('sigma_crit_inv_lens_source')[-1]
+                        labels[i] = l 
+                    else: pass 
+                else: pass 
+
+        theory_i = np.array(['data_vector--2pt_theory_' in l for l in labels])
+        # SJ end
 
 
         ## NW begin
@@ -291,7 +307,7 @@ def pc_to_cosmosis_sample(pc_sample_list, cosmosis_labels):
 #     self.N = len(self.data[labels_pc[0]])
 #     return self.data
 
-def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2pt_like', like_column='like', include_norm=False, pc_chain_fn=None, max_samples=1e9, start_index=0, data_vector_points=False):
+def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2pt_like', like_column='like', include_norm=False, pc_chain_fn=None, max_samples=1e9, start_index=0):
     """This code computes importance weights for a data vector given a chain with data_vector--2pt_theory_### columns. It saves an output file with weights and likelihoods for samples of both the baseline (old) and importance sampled (new) chains.
     
     Parameters:
@@ -330,7 +346,7 @@ def importance_sample(bl_chain_fn, data_vector_file, output_fn, like_section='2p
     include_norm = include_norm or not like_obj.constant_covariance
     include_norm = include_norm or params.get_bool('include_norm', default=False)
 
-    block = Block(labels, like_column, data_vector_points=data_vector_points)
+    block = Block(labels, like_column)
 
     if block.theory_len != len(data_vector):
         raise Exception('Theory and data vectors are not same length ({} and {}.\n Labels = {}'.format(block.theory_len, len(data_vector), labels))
@@ -502,9 +518,6 @@ def main():
                help = 'Max number of samples before exiting (for debugging purposes).')
     parser.add_argument('--overwrite', dest = 'overwrite', action='store_true',
                help = 'Force overwrite output file.')
-    parser.add_argument('--data_vector_points', dest = 'data_vector_points', 
-                        default=False, required = False, 
-               help = 'number of data vector points (for debugging purpose)')
     
     args = parser.parse_args()
     
@@ -525,8 +538,7 @@ def main():
                       like_column=args.like_column,
                       output_fn = args.output,
                       pc_chain_fn=args.pc_chain_fn,
-                      max_samples=args.max_samples,
-                      data_vector_points=args.data_vector_points)
+                      max_samples=args.max_samples)
 
 if __name__ == '__main__':
     main()
