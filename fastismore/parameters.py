@@ -48,6 +48,7 @@ label_dict = {
     'cosmological_parameters--omega_k': r'\Omega_k',
     'cosmological_parameters--yhe': r'Y_\text{He}',
     'cosmological_parameters--mnu': r'm_\nu',
+    'cosmological_parameters--nnu': r'N_{\rm eff}',
     'cosmological_parameters--meffsterile': r'm_{\rm eff}',
     'cosmological_parameters--s8_07': r'\sigma_8(\Omega_{\rm m}/0.3)^{0.7}',
     'cosmological_parameters--xi_interaction': r'\xi',
@@ -70,7 +71,6 @@ label_dict = {
     'rescale_pk_fz--sigma_8_14':r'$\sigma_8^{14}$',\
     'rescale_pk_fz--sigma_8_15':r'$\sigma_8^{15}$',\
     'rescale_pk_fz--sigma_8_16':r'$\sigma_8^{16}$',\
-    
     'intrinsic_alignment_parameters--a': r'A_{IA}',
     'intrinsic_alignment_parameters--alpha': r'\alpha_{IA}',
     'bin_bias--b1': r'b_1',
@@ -78,6 +78,7 @@ label_dict = {
     'bin_bias--b3': r'b_3',
     'bin_bias--b4': r'b_4',
     'bin_bias--b5': r'b_5',
+    'bin_bias--b6': r'b_6',
     'shear_calibration_parameters--m1': r'm_1',
     'shear_calibration_parameters--m2': r'm_2',
     'shear_calibration_parameters--m3': r'm_3',
@@ -91,12 +92,14 @@ label_dict = {
     'wl_photoz_errors--bias_2': r'z^s_2',
     'wl_photoz_errors--bias_3': r'z^s_3',
     'wl_photoz_errors--bias_4': r'z^s_4',
-
+    # lens bias 
     'bias_lens--b1': r'b_1',
     'bias_lens--b2': r'b_2',
     'bias_lens--b3': r'b_3',
     'bias_lens--b4': r'b_4',
     'bias_lens--b5': r'b_5',
+    'bias_lens--b6': r'b_6',
+    # IA
     'intrinsic_alignment_parameters--a1': r'A_1',
     'intrinsic_alignment_parameters--a2': r'A_2',
     'intrinsic_alignment_parameters--alpha1': r'\alpha_1',
@@ -108,17 +111,18 @@ label_dict = {
     'intrinsic_alignment_parameters--a_2': r'A_{z_2}',
     'intrinsic_alignment_parameters--a_3': r'A_{z_3}',
     'intrinsic_alignment_parameters--a_4': r'A_{z_4}',
-
+    # magnification 
     'mag_alpha_lens--alpha_1': r'\alpha_\text{lens}^1',
     'mag_alpha_lens--alpha_2': r'\alpha_\text{lens}^2',
     'mag_alpha_lens--alpha_3': r'\alpha_\text{lens}^3',
     'mag_alpha_lens--alpha_4': r'\alpha_\text{lens}^4',
     'mag_alpha_lens--alpha_5': r'\alpha_\text{lens}^5',
-    
+    # nonparametric
     'npg_parameters--a1': 'A_1',
     'npg_parameters--a2': 'A_2',
     'npg_parameters--a3': 'A_3',
     'npg_parameters--a4': 'A_4',
+    # modified gravity
     'modified_gravity--sigma0': r"\Sigma_0",
     'modified_gravity--mu0': r"\mu_0",
     'modified_gravity--p1': "p_1",
