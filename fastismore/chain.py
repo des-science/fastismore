@@ -73,8 +73,8 @@ class Chain:
             labels = np.array(f.readline()[1:-1].lower().split())
             mask1 = np.array(["data_vector" not in l for l in labels])
             mask2 = np.array(["sigma_crit_inv_lens_source" not in l for l in labels])
-            mask3 = np.array(["rescale_pk_fz--alpha" not in l for l in labels])
-            mask = mask1*mask2*mask3
+            #mask3 = np.array(["rescale_pk_fz--alpha" not in l for l in labels])
+            mask = mask1*mask2
             #import ipdb; ipdb.set_trace()
             data = data[:, mask]  # filter data with mask
         if nsample != 0:
@@ -343,7 +343,7 @@ class Chain:
         elif self.weight_option == "old_log_weight" and "old_log_weight" in self.data.keys():
             if VERBOSE:
                 print('Using column "old_log_weight" as weight for baseline chain.')
-            w = np.exp(self.data["old_log_weight"])
+            w = np.nan_to_num(np.exp(self.data["old_log_weight"]))
             #import ipdb; ipdb.set_trace()
             return w / w.sum()
         
