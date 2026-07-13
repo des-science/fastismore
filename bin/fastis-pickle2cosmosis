@@ -9,6 +9,7 @@ NF_name_map = {
     'omegab':'cosmological_parameters--omega_b',\
     'omegam':'cosmological_parameters--omega_m',\
     'omegak':'cosmological_parameters--omega_k',\
+    'sigma8':'cosmological_parameters--sigma_8',\
     'H0':'cosmological_parameters--h0',\
     'w':'cosmological_parameters--w',\
     'wa':'cosmological_parameters--wa',\
@@ -16,10 +17,18 @@ NF_name_map = {
     'Sigma_0': 'modified_gravity--Sigma0',\
     'mu_0': 'modified_gravity--mu0',\
     'p1': 'modified_gravity--p1',\
+    'neff': 'cosmological_parameters--nnu',\
+    'meff': 'cosmological_parameters--meffsterile',\
     'chi2__joint_log_posterior':'like',\
     'S8':'S8',\
     'weight':'weight',\
 }
+
+# s8z parameters 
+NF_name_map.update({f'alpha_{i}': f'rescale_pk_fz--alpha_{i}' for i in range(9)})
+NF_name_map.update({f'sigma8_{i}': f'rescale_pk_fz--sigma_8_{i}' for i in range(9)})
+NF_name_map.update({f'S8_{i}': f'rescale_pk_fz--s8_{i}' for i in range(9)})
+NF_name_map['alpha_cmb']='rescale_pk_fz--alpha_cmb'
 
 def get_dict_from_pickle(filename):
     with open(filename, 'rb') as file:
@@ -35,18 +44,22 @@ def get_dict_from_pickle(filename):
         if 'like' in keys_in_pickle: output_dic['like'] = data.loglikes
         if 'weight' in keys_in_pickle: output_dic['weight'] = data.weights
         if 'chi2__joint_log_posterior' in keys_in_pickle: output_dic['like'] = data['chi2__joint_log_posterior']
-        output_dic['cosmological_parameters--sigma_8'] = data['S8']*(0.3/data['omegam'])**0.5
-
 
         if 'weight' in keys_in_pickle: output_dic['weight'] = data.weights
         else: output_dic['weight'] = data.weights/np.sum(data.weights)
         # if 'log_weight' in keys_in_pickle: output_dic['log_weight'] = data.weights
 
-        if 'sigma8' not in keys_in_pickle and 'S8' not in keys_in_pickle:
+        if 'sigma8' not in keys_in_pickle and 'S8' in keys_in_pickle and 'omegam' in keys_in_pickle:
             output_dic['cosmological_parameters--sigma_8'] = data['S8']*(0.3/data['omegam'])**0.5
         if 'S8' not in keys_in_pickle and 'sigma8' in keys_in_pickle and 'omegam' in keys_in_pickle:
             output_dic['S8'] = data['sigma8']*(data['omegam']/0.3)**0.5
+            output_dic['cosmological_parameters--s8'] = output_dic['S8']
+        if 'S8_1' not in keys_in_pickle and 'sigma8_1' in keys_in_pickle and 'omegam' in keys_in_pickle:
+            for i in range(0,9):
+                if f'sigma8_{i}' in keys_in_pickle and 'omegam' in keys_in_pickle:
+                    output_dic[f'rescale_pk_fz--s8_{i}'] = data[f'sigma8_{i}']*(data['omegam']/0.3)**0.5
 
+        #import ipdb; ipdb.set_trace()
         """
         if 'omegam' in keys_in_pickle: output_dic['cosmological_parameters--omega_m'] = data['omegam']
         if 'H0' in keys_in_pickle: output_dic['cosmological_parameters--h0'] = data['H0']/100
